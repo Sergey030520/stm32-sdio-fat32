@@ -4,6 +4,7 @@
 
 typedef enum
 {
+    FREQ_32kHZ = 32000,
     FREQ_400kHZ = 400000,
     FREQ_8MHZ = 8000000,
     FREQ_16MHZ = 16000000,
@@ -23,6 +24,8 @@ typedef enum
 
 #define RCC_HSI_FREQ FREQ_16MHZ
 #define RCC_HSE_FREQ FREQ_25MHZ
+#define RCC_LSI_FREQ FREQ_32kHZ
+#define RCC_LSE_FREQ 32768
 
 typedef struct
 {
@@ -321,6 +324,38 @@ typedef struct
     uint32_t APB2_Freq;   // Частота высокоскоростной периферии (≤84 MHz для F4)
 } RCC_Frequencies;
 
+typedef enum
+{
+    RTC_SRC_NONE = 0x0,
+    RTC_SRC_LSE  = 0x1,
+    RTC_SRC_LSI  = 0x2,
+    RTC_SRC_HSE  = 0x3 
+} RCC_RTCClockSource;
+
+// BDCR
+#define RCC_BDCR_BDRST (0x1 << 16)
+#define RCC_BDCR_RTCEN (0x1 << 15)
+#define RCC_BDCR_RTCSEL(val) (val << 8)
+#define RCC_BDCR_RTCSEL_MASK RCC_BDCR_RTCSEL(0x3) 
+#define RCC_BDCR_LSEBYP (0x1 << 2)
+#define RCC_BDCR_LSERDY (0x1 << 1)
+#define RCC_BDCR_LSEON (0x1 << 0)
+
+// CSR
+
+#define RCC_CSR_LPWRRSTF (0x1 << 31)
+#define RCC_CSR_WWDGRSTF (0x1 << 30)
+#define RCC_CSR_IWDGRSTF (0x1 << 29)
+#define RCC_CSR_SFTRSTF (0x1 << 28)
+#define RCC_CSR_PORRSTF (0x1 << 27)
+#define RCC_CSR_PINRSTF (0x1 << 26)
+#define RCC_CSR_BORRSTF (0x1 << 25)
+#define RCC_CSR_RMVF (0x1 << 24)
+#define RCC_CSR_LSIRDY (0x1 << 1)
+#define RCC_CSR_LSION (0x1 << 0)
+
+
+
 extern RCC_Type *RCC;
 
 int setup_system_config_rcc(RCC_SystemConfig *config);
@@ -329,3 +364,5 @@ void get_clock_frequencies(RCC_Frequencies *freq);
 void enable_and_reset_rcc(RCC_Bus bus, uint32_t periph_mask);
 void get_rcc_clock_dividers(RCC_BusConfig *config);
 uint32_t get_pll48clk_freq();
+int configure_rtc_clock_rcc(uint32_t rtcsel);
+uint32_t get_rtc_clock_freq();

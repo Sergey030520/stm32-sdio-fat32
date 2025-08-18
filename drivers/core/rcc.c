@@ -411,3 +411,87 @@ uint32_t get_pll48clk_freq()
 
     return pll48clk;
 }
+
+
+int configure_rtc_clock_rcc(uint32_t rtcsel)
+{
+    // Разрешаем доступ к backup-домену
+    PWR->CR |= POWER_CR_DBP;
+    for (int i = 0; i < 100000; ++i)
+        ;
+
+    // Сброс backup-домена
+    RCC->BDCR |= RCC_BDCR_BDRST;
+    RCC->BDCR &= ~RCC_BDCR_BDRST;
+
+    uint32_t timeout = 100000;
+    switch (rtcsel)
+    {
+    case RTC_SRC_LSE:
+        while (!(RCC->BDCR & RCC_BDCR_LSERDY) && timeout--)
+            ;
+        if (timeout == 0)
+            return -1;
+        break;
+
+    case RTC_SRC_LSI:
+        RCC->CSR |= RCC_CSR_LSION;
+        while (!(RCC->CSR & RCC_CSR_LSIRDY) && timeout--)
+            ;
+        if (timeout == 0)
+            return -1;
+        break;
+
+    case RTC_SRC_HSE:
+
+        if (!(RCC->CR & RCC_CR_HSERDY))
+        {
+            RCC->CR |= RCC_CR_HSEON;
+            while (!(RCC->CR & RCC_CR_HSERDY) && timeout--)
+                ;
+            if (timeout == 0)
+                return -1;
+        }
+        if (!(RCC->BDCR & RCC_BDCR_RTCEN))
+        {
+            RCC->CFGR &= ~RCC_CFGR_RTCPRE_MASK;
+            RCC->CFGR |= RCC_CFGR_RTCPRE(RCC_RTCPRE_DIV25);
+        }
+        break;
+    }
+
+    RCC->BDCR &= ~RCC_BDCR_RTCSEL_MASK;
+    RCC->BDCR |= RCC_BDCR_RTCSEL(rtcsel);
+
+    RCC->BDCR |= RCC_BDCR_RTCEN;
+    return 0;
+}
+
+uint32_t get_rtc_clock_freq()
+{
+    uint32_t rtcsel = (RCC->BDCR >> 8) & 0x3;
+
+    switch (rtcsel)
+    {
+    case RTC_SRC_LSE:
+        return RCC_LSE_FREQ;
+
+    case RTC_SRC_LSI:
+        return RCC_LSI_FREQ;
+
+    case RTC_SRC_HSE:
+    {
+        uint32_t src_freq = RCC_HSE_FREQ;
+        uint32_t rtcpre = (RCC->CFGR & RCC_CFGR_RTCPRE_MASK) >> 16;
+        if (rtcpre >= RCC_RTCPRE_DIV2)
+        {
+            src_freq /= rtcpre;
+        }
+        return src_freq;
+    }
+
+    default:
+        return 0;
+    }
+}
+
