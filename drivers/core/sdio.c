@@ -7,8 +7,6 @@
 #include "rcc.h"
 #include "board_pins.h"
 
-
-
 #define TIMELOAD 1000000
 
 // 0x40012C00UL
@@ -66,18 +64,16 @@ uint8_t sdio_calc_clkcr_div(uint32_t apb2_freq_hz, uint32_t target_freq_hz)
 int init_sdio()
 {
     GPIO_PinConfig_t pin_conf = {
-    .gpiox  = GPIOC_REG,          
-    .pin    = 0,                   
-    .mode   = GPIO_MODER_ALTERNATE,  
-    .speed  = GPIO_SPEED_100MHz,    
-    .pull   = GPIO_PULL_UP,          
-    .output = GPIO_OUTPUT_PUSHPULL,  
-    .af     = GPIO_AF12               
-};
+        .gpiox = GPIOC_REG,
+        .pin = 0,
+        .mode = GPIO_MODER_ALTERNATE,
+        .speed = GPIO_SPEED_100MHz,
+        .pull = GPIO_PULL_UP,
+        .output = GPIO_OUTPUT_PUSHPULL,
+        .af = GPIO_AF12};
 
-// Настройка пина через структуру
-set_gpio_conf(&pin_conf);
-
+    // Настройка пина через структуру
+    set_gpio_conf(&pin_conf);
 
     enable_and_reset_rcc(RCC_BUS_AHB1, RCC_AHB1ENR_GPIOCEN | RCC_AHB1ENR_GPIODEN);
     enable_and_reset_rcc(RCC_BUS_APB2, RCC_APB2ENR_SDIOEN);
@@ -91,7 +87,7 @@ set_gpio_conf(&pin_conf);
     }
 
     pin_conf.pin = SDIO_CLK_PIN;
-    
+
     // PC12 - CLK
     set_gpio_conf(&pin_conf);
 
@@ -112,18 +108,16 @@ set_gpio_conf(&pin_conf);
     }
     delay_timer(10);
 
-
     // CLKR CLEAR
     SDIO->CLKCR = 0;
 
     // CLKR_SET
     set_bus_width_sdio(WIDE_BUS_1BIT_MODE);
 
+    uint8_t div = sdio_calc_clkcr_div(get_pll48clk_freq(), FREQ_400kHZ);
 
-    uint8_t div = sdio_calc_clkcr_div(get_pll48clk_freq(), FREQ_400kHZ);    
-    
     set_clock_frequency_sdio(div);
-    
+
     delay_timer(10);
 
     // SDIO_MASK_CCRCFAILIE | SDIO_MASK_DCRCFAILIE | SDIO_MASK_RXOVERRIE | SDIO_STA_TXUNDERR;

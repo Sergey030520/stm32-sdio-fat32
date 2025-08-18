@@ -446,7 +446,7 @@ int init_sd()
 
         if (SD.voltage == 0)
         {
-            delay_timer(10); // 10 мс между попытками
+            delay_timer(100); 
         }
     }
 

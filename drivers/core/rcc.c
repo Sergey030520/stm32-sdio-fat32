@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include "led.h"
 #include "utils.h"
+#include "pwr.h"
+
 
 RCC_Type *RCC = RCC_REG;
 
@@ -368,8 +370,8 @@ void enable_and_reset_rcc(RCC_Bus bus, uint32_t periph_mask)
 
     case RCC_BUS_APB2:
         RCC->APB2ENR |= periph_mask;
-        // RCC->APB2RSTR |= periph_mask;
-        // RCC->APB2RSTR &= ~periph_mask;
+        RCC->APB2RSTR |= periph_mask;
+        RCC->APB2RSTR &= ~periph_mask;
         break;
     }
 }

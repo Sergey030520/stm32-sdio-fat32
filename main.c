@@ -31,7 +31,7 @@ int main()
     int status = init_board();
     if (status != 0)
     {
-        // ledOn(13, 1);
+        ledOn(13, 1);
         goto error;
     }
     LOG_INFO("Драйверы запущены и карта инициализирована!");
@@ -50,6 +50,7 @@ int main()
     ledOn(15, 1);
     while (1)
     {
+        
     }
 
 error:
@@ -112,9 +113,9 @@ int init_rcc()
         }
     }
 
-    peripheral_conf.APB1 = RCC_APB1ENR_TIM2EN;
+    peripheral_conf.APB1 = RCC_APB1ENR_TIM2EN | RCC_APB1ENR_PWREN;
     peripheral_conf.APB2 = RCC_APB2ENR_USART1EN;
-    peripheral_conf.AHB1 = RCC_AHB1ENR_DMA2EN | RCC_AHB1ENR_GPIOAEN;
+    peripheral_conf.AHB1 = RCC_AHB1ENR_DMA2EN | RCC_AHB1ENR_GPIOAEN | RCC_AHB1ENR_BKPSRAMEN;
     peripheral_conf.AHB2 = 0;
     peripheral_conf.AHB3 = 0;
 
@@ -139,7 +140,9 @@ int init_board()
     {
         ledOn(13, 1);
         return -1;
-    }
+    }   
+
+    init_timer();
 
     init_uart();
 

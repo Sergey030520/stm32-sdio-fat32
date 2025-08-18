@@ -95,5 +95,5 @@ typedef enum
     TIM_CHANNEL4
 } Timer_Channel;
 
-void timer_init();
+void init_timer();
 void delay_timer(uint32_t ms);

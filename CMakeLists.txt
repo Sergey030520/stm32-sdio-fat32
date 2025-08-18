@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 
 set(CMAKE_TOOLCHAIN_FILE ${CMAKE_SOURCE_DIR}/arm-none-eabi-gcc.cmake)
 
-project(SDIO_FAT32 C ASM)
+project(stm32-sdio-fat32 C ASM)
 
 set(EXECUTABLE ${PROJECT_NAME}.elf)
 set(LINKER_FILE ${CMAKE_SOURCE_DIR}/conf_mem_stm32f4/STM32F407VETX_FLASH.ld)
