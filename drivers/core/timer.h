@@ -26,7 +26,7 @@ typedef struct
     uint32_t DMAR;
     uint32_t TIM2_OR;
     uint32_t TIM5_OR;
-} GP_Timer_Type1;
+} GP_Timer_Type;
 
 
 
@@ -95,4 +95,5 @@ typedef enum
     TIM_CHANNEL4
 } Timer_Channel;
 
-void delay_timer(uint16_t ms);
+void timer_init();
+void delay_timer(uint32_t ms);
