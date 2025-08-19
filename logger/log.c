@@ -1,44 +1,49 @@
 #include "log.h"
 #include <stdio.h>
-#include <stdarg.h>
-
 
 LogLevel current_level = LEVEL_DEBUG;
 
 static DataTransferFunc transfer_func = NULL;
 
-void stm_init_log(DataTransferFunc func){
+void stm_init_log(DataTransferFunc func)
+{
     transfer_func = func;
 }
 
-void stm_log(LogLevel level, uint16_t err_code, const char *file, int line, char *format, ...)
+void stm_log(LogLevel level, uint16_t err_code, const char *file, int line, const char *format, ...)
+{
+    va_list args;
+    va_start(args, format);
+    vstm_log(level, err_code, file, line, format, args);
+    va_end(args);
+}
+
+void vstm_log(LogLevel level, uint16_t err_code, const char *file, int line, const char *format, va_list args)
 {
     if (level < current_level)
         return;
 
     char buff[4096];
-    va_list args;
 
-    uint16_t size = 0;
     int offset = snprintf(buff, sizeof(buff), "[%s:%d] ", file, line);
-
-    if (offset < 0 || offset >= sizeof(buff))
+    if (offset < 0 || offset >= (int)sizeof(buff))
         return;
 
-    va_start(args, format);
-    size = vsnprintf(buff + offset, sizeof(buff) - offset, format, args);
-    va_end(args);
+    int written = vsnprintf(buff + offset, sizeof(buff) - offset, format, args);
+    if (written < 0)
+        return;
 
-    size += offset;
+    int size = offset + written;
+    if (size >= (int)sizeof(buff))
+        size = sizeof(buff) - 1;
 
 #ifdef LOG_CMD_MODE
     LogMessage message = {
-        .buffer = buff,
         .length = size,
         .level = (uint8_t)level};
+    memcpy(message.buffer, buff, size);
 
-
-    transfer_func(message, sizeof(message));
+    transfer_func((const char *)&message, sizeof(message.length) + sizeof(message.level) + size);
 #else
     transfer_func(buff, size);
 #endif
@@ -53,10 +58,9 @@ void stm_log_hex(LogLevel level, uint16_t err_code, const char *file, int line, 
     char *ptr = buffer;
     char *end = buffer + sizeof(buffer) - 1;
 
-
     for (int byte = 0; byte < size; byte += group)
     {
-        if (ptr + 1 >= end)  
+        if (ptr + 1 >= end)
             break;
 
         switch (group)
@@ -68,7 +72,7 @@ void stm_log_hex(LogLevel level, uint16_t err_code, const char *file, int line, 
             if (byte + 1 < size)
                 ptr += snprintf(ptr, end - ptr, "%02X%02X ", data[byte], data[byte + 1]);
             else
-                ptr += snprintf(ptr, end - ptr, "%02X ", data[byte]);  // Последний байт без пары
+                ptr += snprintf(ptr, end - ptr, "%02X ", data[byte]); // Последний байт без пары
             break;
         case GROUP_4BYTE:
             if (byte + 3 < size)

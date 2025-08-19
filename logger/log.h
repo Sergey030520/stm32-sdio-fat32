@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <string.h>
+#include <stdarg.h>
 
 
 #pragma once
@@ -37,7 +38,8 @@ typedef enum
 extern LogLevel current_level;
 
 void stm_init_log(DataTransferFunc func);
-void stm_log(LogLevel level, uint16_t err_code, const char *file, int line, char *format, ...);
+void stm_log(LogLevel level, uint16_t err_code, const char *file, int line, const char *format, ...);
+void vstm_log(LogLevel level, uint16_t err_code, const char *file, int line, const char *format, va_list args);
 void stm_log_hex(LogLevel level, uint16_t err_code, const char *file, int line, uint8_t *data, int size, LogGroupBytes group);
 
 
