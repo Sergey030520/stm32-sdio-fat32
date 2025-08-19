@@ -44,7 +44,7 @@ typedef struct
 #define LEAD_SIGNATURE 0x41615252
 #define STRUCT_SIGNATURE 0x61417272
 
-#define RESERV_CLUSTER_FAT32 0xffffff8;
+#define RESERV_CLUSTER_FAT32 0xffffff8
 #define FILE_END_TABLE_FAT32 0xFFFFFFF
 #define NOT_USED_CLUSTER_FAT32 0x0000000
 #define HrdErrBitMask 0x04000000
@@ -161,12 +161,12 @@ typedef enum
 
 typedef enum
 {
-    SIZE_1GB = 1073741824,
-    SIZE_2GB = 2147483648,
-    SIZE_4GB = 4294967296,
-    SIZE_8GB = 8589934592,
-    SIZE_16GB = 8589934592,
-    SIZE_32GB = 34359738368
+    SIZE_1GB  = 1ULL * 1024 * 1024 * 1024,
+    SIZE_2GB  = 2ULL * 1024 * 1024 * 1024,
+    SIZE_4GB  = 4ULL * 1024 * 1024 * 1024,
+    SIZE_8GB  = 8ULL * 1024 * 1024 * 1024,
+    SIZE_16GB = 16ULL * 1024 * 1024 * 1024,
+    SIZE_32GB = 32ULL * 1024 * 1024 * 1024
 } StorageCapacity;
 
 #define SET_TIME(hours, min, sec) (((hours & 0x1f) << 11) | ((min & 0x3f) << 5) | ((sec & 0x1f) << 0))

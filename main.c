@@ -19,8 +19,8 @@ void init_uart();
 int init_fat32(BlockDevice *device);
 
 int clear_sd(uint32_t offset, uint32_t size);
-int read_sd(uint8_t *buffer, uint32_t size, uint32_t sector);
-int write_sd(const uint8_t *data, uint32_t size, uint32_t sector);
+int read_sd(uint8_t *buffer, uint32_t count_blocks, uint32_t start_sector);
+int write_sd(const uint8_t *data, uint32_t count_blocks, uint32_t start_sector);
 int read_sd_with_dma(uint8_t *buffer, uint32_t size, uint32_t sector);
 int write_sd_with_dma(const uint8_t *data, uint32_t size, uint32_t sector);
 int usart_adapter(const char *data, int length);
@@ -50,7 +50,6 @@ int main()
     ledOn(15, 1);
     while (1)
     {
-        
     }
 
 error:
@@ -140,7 +139,7 @@ int init_board()
     {
         ledOn(13, 1);
         return -1;
-    }   
+    }
 
     init_timer();
 
@@ -159,13 +158,41 @@ int init_board()
     return 0;
 }
 
-int read_sd(uint8_t *buffer, uint32_t size, uint32_t sector)
+int read_sd(uint8_t *buffer, uint32_t count_blocks, uint32_t start_sector)
 {
-    return read_multi_block_sd(buffer, size / 512, sector, DEFAULT_TIMEOUT);
+    uint32_t chunk = get_optimal_erase_chunk(); 
+    uint32_t read = 0;
+
+    while (read < count_blocks)
+    {
+        uint32_t todo = (count_blocks - read > chunk) ? chunk : (count_blocks - read);
+        int status = read_multi_block_sd(buffer + read * 512, todo, start_sector + read, DEFAULT_TIMEOUT);
+        if (status < 0) return status;
+        read += todo;
+    }
+
+    return 0;
 }
-int write_sd(const uint8_t *data, uint32_t size, uint32_t sector)
+int write_sd(const uint8_t *data, uint32_t count_blocks, uint32_t start_sector)
 {
-    return write_multi_block_sd((uint8_t *)data, size / 512, sector, DEFAULT_TIMEOUT);
+    uint32_t chunk = get_optimal_erase_chunk();
+    uint32_t written = 0;
+
+    int status = wait_card_ready();
+    if (status != 0)
+    {
+        LOG_INFO("Card not ready before first write [Code: %d]", status);
+        return status;
+    }
+
+    while (written < count_blocks)
+    {
+        uint32_t todo = (count_blocks - written > chunk) ? chunk : (count_blocks - written);
+        int status = write_multi_block_sd(data + written * 512, todo, start_sector + written, DEFAULT_TIMEOUT);
+        if (status < 0)
+            return status;
+        written += todo;
+    }
 }
 
 int read_sd_with_dma(uint8_t *buffer, uint32_t size, uint32_t sector)
@@ -259,16 +286,17 @@ int init_fat32(BlockDevice *device)
     }
 
     int status = mount_fat32(device);
+    LOG_INFO("SD card is not formatted");
     if (status != 0)
     {
-        // Попытка форматирования устройства
+        LOG_INFO("Formatting SD card");
         status = formatted_fat32(device, SIZE_8GB);
         if (status != 0)
         {
             return -2;
         }
+        LOG_INFO("Retrying SD card mount");
 
-        // Повторная попытка монтирования после форматирования
         status = mount_fat32(device);
         if (status != 0)
         {
@@ -281,7 +309,17 @@ int init_fat32(BlockDevice *device)
 
 int clear_sd(uint32_t offset, uint32_t size)
 {
-    uint32_t address_start = offset;
-    uint32_t address_end = offset + size - 1; 
-   return erase_sd(address_start, address_end);
+    const uint32_t chunk = get_optimal_erase_chunk();
+    uint32_t cleared = 0;
+    while (cleared < size)
+    {
+        uint32_t todo = (size - cleared > chunk) ? chunk : (size - cleared);
+        uint32_t address_start = offset + cleared;
+        uint32_t address_end = address_start + todo - 1;
+        int status = erase_sd(address_start, address_end);
+        if (status < 0)
+            return status;
+        cleared += todo;
+    }
+    return 0;
 }

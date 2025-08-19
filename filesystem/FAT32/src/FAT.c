@@ -6,7 +6,7 @@
 #include "DateTime.h"
 #include "pool_memory.h"
 #include "file_utils.h"
-#include "log.h"
+#include "log_fat32.h"
 
 FatLayoutInfo *fat_info = NULL;
 
@@ -316,25 +316,30 @@ void *stm_memcpy(void *dest, const void *src, uint32_t size)
  */
 uint32_t calculate_size_table_fat32(uint64_t capacity, MBR_Type *mbr_data)
 {
-    uint32_t total_sectors = (uint32_t)(capacity / mbr_data->BPB_BytsPerSec);
-
-    if (total_sectors <= mbr_data->BPB_RsvdSecCnt)
+    if (!mbr_data)
         return 0;
 
-    total_sectors -= mbr_data->BPB_RsvdSecCnt;
+    uint32_t bytes_per_sector = mbr_data->BPB_BytsPerSec;
+    uint32_t sec_per_clus = mbr_data->BPB_SecPerClus;
+    uint32_t reserved_sectors = mbr_data->BPB_RsvdSecCnt;
+    uint32_t num_fats = mbr_data->BPB_NumFATs;
 
-    uint32_t fat_size = 0;
-    uint32_t data_sectors;
-    uint32_t clusters;
+    FAT32_LOG_INFO("bytes_per_sector: %u, sec_per_clus: %u, reserved_sectors: %u, num_fats: %u",
+                   bytes_per_sector, sec_per_clus, reserved_sectors, num_fats);
 
-    fat_size = (uint32_t)((((total_sectors * 4ULL) / mbr_data->BPB_SecPerClus) + (mbr_data->BPB_BytsPerSec - 1)) / mbr_data->BPB_BytsPerSec);
+    uint64_t total_sectors = capacity / bytes_per_sector;
+    if (total_sectors <= reserved_sectors)
+        return 0;
 
-    data_sectors = total_sectors - (mbr_data->BPB_NumFATs * fat_size);
-    clusters = data_sectors / mbr_data->BPB_SecPerClus;
+    uint64_t data_sectors = total_sectors - reserved_sectors;
+    uint64_t data_clusters = data_sectors / sec_per_clus;
 
-    fat_size = (uint32_t)(((clusters * 4ULL) + (mbr_data->BPB_BytsPerSec - 1)) / mbr_data->BPB_BytsPerSec);
+    uint64_t fat_sectors = (data_clusters * 4 + bytes_per_sector - 1) / bytes_per_sector;
 
-    return fat_size;
+    if (fat_sectors > 0xFFFFFFFF)
+        return 0; // защита от переполнения
+
+    return (uint32_t)fat_sectors;
 }
 
 int seek_file_fat32(FAT32_File *file, int32_t offset, SEEK_Mode mode)
@@ -3076,6 +3081,8 @@ uint32_t calc_tot_sec32(uint64_t volume, const MBR_Type *mbr_data)
 #define UPDATE_INTERVAL_SECTORS 500
 #define BAR_WIDTH 50
 
+
+
 int formatted_fat32(BlockDevice *device, uint64_t capacity)
 {
     if (device == NULL)
@@ -3083,45 +3090,65 @@ int formatted_fat32(BlockDevice *device, uint64_t capacity)
         return FAT_ERR_INVALID_ARGUMENT;
     }
     int status = 0;
-
     // Загрузить данные MBR
-    uint8_t boot_data[512];
-    MBR_Type *mbr_data = (MBR_Type *)boot_data;
+    MBR_Type mbr_data = {0};
+    // MBR_Type mbr_data = {0};
+    memset(&mbr_data, 0, sizeof(MBR_Type));
     // mbr_data->BS_jmpBoot = {0xeb, 0x58, 0x90};//можно не указывать это для перехода в область памяти для загрузки ОС
-    stm_memcpy(mbr_data->BS_OEMName, "STM32_MS", sizeof(mbr_data->BS_OEMName));
-    mbr_data->BPB_BytsPerSec = 512;
+    stm_memcpy(mbr_data.BS_OEMName, "STM32_MS", sizeof(mbr_data.BS_OEMName));
+    
+    FAT32_LOG_INFO("size: %d", ((uint32_t)sizeof(uint32_t) == 0));
+    
+    mbr_data.BPB_BytsPerSec = 512;
+
     if (capacity >= SIZE_2GB && capacity <= SIZE_8GB)
     {
-        mbr_data->BPB_SecPerClus = 8; // 4096 размер сектора / 512
+        mbr_data.BPB_SecPerClus = 8; // 4096 размер сектора / 512
+    }else{
+        return -1;
     }
-    mbr_data->BPB_Media = 0xF8;
 
-    mbr_data->BPB_RootEntCnt = 0;
-    mbr_data->BPB_SecPerTrk = 63; // по default
-    mbr_data->BPB_NumHeads = 255; // по default
+    mbr_data.BPB_Media = 0xF8;
 
-    mbr_data->BPB_HiddSec = 0;
+    mbr_data.BPB_RootEntCnt = 0;
+    mbr_data.BPB_SecPerTrk = 63; // по default
+    mbr_data.BPB_NumHeads = 255; // по default
+
+    mbr_data.BPB_HiddSec = 0;
 
     // Настройка таблиц
-    mbr_data->BPB_NumFATs = 2;
-    mbr_data->BPB_RsvdSecCnt = 32;
-    mbr_data->BPB_FATSz32 = calculate_size_table_fat32(capacity, mbr_data);
+    mbr_data.BPB_NumFATs = 2;
+    mbr_data.BPB_RsvdSecCnt = 32;
 
-    mbr_data->BPB_TotSec32 = calc_tot_sec32(capacity, mbr_data);
+       FAT32_LOG_INFO(
+        "FAT32 MBR part1 {BPB_NumFATs: %d, BPB_SecPerClus: %d, BPB_BytsPerSec: %d}",
+        mbr_data.BPB_NumFATs,
+        mbr_data.BPB_SecPerClus,
+        mbr_data.BPB_BytsPerSec);
 
-    mbr_data->BPB_ExtFlags = 0;
-    mbr_data->BPB_FSVer = 0;
+    mbr_data.BPB_FATSz32 = calculate_size_table_fat32(capacity, &mbr_data);
 
-    mbr_data->BPB_RootClus = 2;
-    mbr_data->BPB_FSInfo = 1;
-    mbr_data->BPB_BkBootSec = 6;
+    mbr_data.BPB_TotSec32 = calc_tot_sec32(capacity, &mbr_data);
 
-    mbr_data->BS_DrvNum = 0x80;
-    mbr_data->BS_BootSig = 0x29;
-    mbr_data->BS_VolID = 345;
-    stm_memcpy(mbr_data->BS_VolLab, "STM32F407", sizeof(mbr_data->BS_VolLab));
-    stm_memcpy(mbr_data->BS_FilSysType, "FAT32 ", sizeof(mbr_data->BS_FilSysType));
-    mbr_data->Signature_word = WORD_SIGNATURE;
+    mbr_data.BPB_ExtFlags = 0;
+    mbr_data.BPB_FSVer = 0;
+
+    mbr_data.BPB_RootClus = 2;
+    mbr_data.BPB_FSInfo = 1;
+    mbr_data.BPB_BkBootSec = 6;
+
+    mbr_data.BS_DrvNum = 0x80;
+    mbr_data.BS_BootSig = 0x29;
+    mbr_data.BS_VolID = 345;
+    stm_memcpy(mbr_data.BS_VolLab, "STM32F407", sizeof(mbr_data.BS_VolLab));
+    stm_memcpy(mbr_data.BS_FilSysType, "FAT32 ", sizeof(mbr_data.BS_FilSysType));
+    mbr_data.Signature_word = WORD_SIGNATURE;
+
+    FAT32_LOG_INFO(
+        "FAT32 MBR {BPB_FATSz32: %d, BPB_TotSec32: %d, BPB_RootClus: %d}",
+        mbr_data.BPB_FATSz32,
+        mbr_data.BPB_TotSec32,
+        mbr_data.BPB_RootClus);
 
     // ========== 1. Очистка системной области ==========
     // Очищаются начальные системные сектора:
@@ -3129,46 +3156,55 @@ int formatted_fat32(BlockDevice *device, uint64_t capacity)
     // - FSInfo-сектор (LBA 1)
     // - Копия загрузочного сектора (Backup Boot Sector, LBA 6)
 
-    uint32_t sectors_to_clear = mbr_data->BPB_RsvdSecCnt + 
-                            mbr_data->BPB_NumFATs * mbr_data->BPB_FATSz32;
+    uint32_t sectors_to_clear = mbr_data.BPB_RsvdSecCnt +
+                                mbr_data.BPB_NumFATs * mbr_data.BPB_FATSz32;
 
     status = device->clear(0, sectors_to_clear);
     if (status < 0)
     {
+        FAT32_LOG_INFO("Error device clear sectors [0, %d] (status: %d)!", sectors_to_clear, status);
         return FAT_ERR_WRITE_FAIL;
     }
+    FAT32_LOG_INFO("Successfully cleared first %d sectors.", sectors_to_clear);
 
-    status = device->write(boot_data, sizeof(MBR_Type), 0);
+    status = device->write((uint8_t *)&mbr_data, sizeof(MBR_Type), 0);
     if (status < 0)
     {
+        FAT32_LOG_INFO("Error device write sector 0 (status: %d)!", status);
         return FAT_ERR_WRITE_FAIL;
     }
-    status = device->write(boot_data, sizeof(MBR_Type), 6); //
+    FAT32_LOG_INFO("Boot sector written successfully to sector 0.");
+
+    status = device->write((uint8_t *)&mbr_data, sizeof(MBR_Type), 6); //
     if (status < 0)
     {
+        FAT32_LOG_INFO("Error device write sector 6 (status: %d)!", status);
         return FAT_ERR_WRITE_FAIL;
     }
+    FAT32_LOG_INFO("Boot sector backup written successfully to sector 6.");
 
     FSInfo_Type fs_info = {0};
     fs_info.FSI_LeadSig = LEAD_SIGNATURE;
     fs_info.FSI_StrucSig = STRUCT_SIGNATURE;
     fs_info.FSI_TrailSig = TRAIL_SIGNATURE;
 
-    uint32_t free_count_claster = (mbr_data->BPB_TotSec32 - mbr_data->BPB_RsvdSecCnt - (mbr_data->BPB_FATSz32 * mbr_data->BPB_NumFATs)) / mbr_data->BPB_SecPerClus;
+    uint32_t free_count_claster = (mbr_data.BPB_TotSec32 - mbr_data.BPB_RsvdSecCnt - (mbr_data.BPB_FATSz32 * mbr_data.BPB_NumFATs)) / mbr_data.BPB_SecPerClus;
     fs_info.FSI_Free_Count = free_count_claster - 4;
 
     fs_info.FSI_Nxt_Free = 4; // 0 и 1 не должны использоваться
     status = device->write((uint8_t *)&fs_info, sizeof(FSInfo_Type), 1);
     if (status < 0)
     {
+        FAT32_LOG_INFO("Error device write sector FSInfo (status: %d)!", status);
         return FAT_ERR_WRITE_FAIL;
     }
+    FAT32_LOG_INFO("FSInfo sector written successfully to sector 1.");
 
     // Заполение таблицы 1 и 2
-    uint32_t tabl1_addr = mbr_data->BPB_RsvdSecCnt + mbr_data->BPB_HiddSec;
-    uint32_t tabl2_addr = mbr_data->BPB_FATSz32 + tabl1_addr;
+    uint32_t tabl1_addr = mbr_data.BPB_RsvdSecCnt + mbr_data.BPB_HiddSec;
+    uint32_t tabl2_addr = mbr_data.BPB_FATSz32 + tabl1_addr;
 
-    int max_records = mbr_data->BPB_BytsPerSec / 4;
+    int max_records = mbr_data.BPB_BytsPerSec / 4;
     uint32_t records[max_records];
     uint32_t idx = 0;
     for (idx = 0; idx < max_records; ++idx)
@@ -3176,19 +3212,24 @@ int formatted_fat32(BlockDevice *device, uint64_t capacity)
         records[idx] = FREE_CLUSTER;
     }
 
-    for (int idxSector = 0; idxSector < mbr_data->BPB_FATSz32; ++idxSector)
+    for (int idxSector = 0; idxSector < mbr_data.BPB_FATSz32; ++idxSector)
     {
         status = device->write((uint8_t *)records, 512, (tabl1_addr + idxSector));
         if (status < 0)
         {
+            FAT32_LOG_INFO("Error device write sector of table 1 (sector: %d, status: %d)!",
+                           tabl1_addr + idxSector, status);
             return FAT_ERR_WRITE_FAIL;
         }
         status = device->write((uint8_t *)records, 512, (tabl2_addr + idxSector));
         if (status < 0)
         {
+            FAT32_LOG_INFO("Error device write sector of table 2 (sector: %d, status: %d)!",
+                           tabl2_addr + idxSector, status);
             return FAT_ERR_WRITE_FAIL;
         }
     }
+    FAT32_LOG_INFO("Tables written successfully.");
 
     records[0] = RESERV_CLUSTER_FAT32;
     records[1] = FAT32_CLUSTER_END;
@@ -3214,9 +3255,9 @@ int formatted_fat32(BlockDevice *device, uint64_t capacity)
         .DIR_FstClusLO = 3,
     };
 
-    uint32_t data_addr = tabl2_addr + mbr_data->BPB_FATSz32;
+    uint32_t data_addr = tabl2_addr + mbr_data.BPB_FATSz32;
 
-    status = device->write((uint8_t *)&dir, sizeof(dir), (data_addr + (2 - mbr_data->BPB_RootClus) * mbr_data->BPB_SecPerClus));
+    status = device->write((uint8_t *)&dir, sizeof(dir), (data_addr + (2 - mbr_data.BPB_RootClus) * mbr_data.BPB_SecPerClus));
     if (status < 0)
     {
         return FAT_ERR_WRITE_FAIL;
@@ -3240,7 +3281,7 @@ int formatted_fat32(BlockDevice *device, uint64_t capacity)
     stm_memcpy(buffer_data, (uint8_t *)&dir1, sizeof(dir1));
     stm_memcpy(buffer_data + sizeof(dir1), (uint8_t *)&dir2, sizeof(dir2));
 
-    status = device->write(buffer_data, sizeof(buffer_data), (data_addr + (3 - mbr_data->BPB_RootClus) * mbr_data->BPB_SecPerClus));
+    status = device->write(buffer_data, sizeof(buffer_data), (data_addr + (3 - mbr_data.BPB_RootClus) * mbr_data.BPB_SecPerClus));
     if (status < 0)
     {
         return FAT_ERR_WRITE_FAIL;
@@ -3253,41 +3294,41 @@ void print_char(char *text, int size)
 {
     if (text == NULL)
     {
-        LOG_INFO("Error: NULL pointer encountered\n");
+        FAT32_LOG_INFO("Error: NULL pointer encountered\n");
         return;
     }
 
     for (int i = 0; i < size; ++i)
     {
-        LOG_INFO("%c", text[i]);
+        FAT32_LOG_INFO("%c", text[i]);
     }
 }
 void show_mbr(MBR_Type *data)
 {
-    LOG_INFO("MBR:");
-    LOG_INFO("\tBPB_SecPerClus: %d, BPB_BytsPerSec: %d, BPB_RsvdSecCnt: %d\n", data->BPB_SecPerClus, data->BPB_BytsPerSec, data->BPB_RsvdSecCnt);
-    LOG_INFO("\tBPB_NumFATs: %d, BPB_RootEntCnt: %d, BPB_HiddSec: %d\n", data->BPB_NumFATs, data->BPB_RootEntCnt, data->BPB_HiddSec);
-    LOG_INFO("\tBPB_TotSec32: %d, BPB_FATSz32: %d, BPB_FSVer: %d\n", data->BPB_TotSec32, data->BPB_FATSz32, data->BPB_FSVer);
-    LOG_INFO("\tBPB_RootClus: %d, BPB_FSInfo: %d, Signature_word: %d\n", data->BPB_RootClus, data->BPB_FSInfo, data->Signature_word);
+    FAT32_LOG_INFO("MBR:");
+    FAT32_LOG_INFO("\tBPB_SecPerClus: %d, BPB_BytsPerSec: %d, BPB_RsvdSecCnt: %d\n", data->BPB_SecPerClus, data->BPB_BytsPerSec, data->BPB_RsvdSecCnt);
+    FAT32_LOG_INFO("\tBPB_NumFATs: %d, BPB_RootEntCnt: %d, BPB_HiddSec: %d\n", data->BPB_NumFATs, data->BPB_RootEntCnt, data->BPB_HiddSec);
+    FAT32_LOG_INFO("\tBPB_TotSec32: %d, BPB_FATSz32: %d, BPB_FSVer: %d\n", data->BPB_TotSec32, data->BPB_FATSz32, data->BPB_FSVer);
+    FAT32_LOG_INFO("\tBPB_RootClus: %d, BPB_FSInfo: %d, Signature_word: %d\n", data->BPB_RootClus, data->BPB_FSInfo, data->Signature_word);
 
-    LOG_INFO("\tBPB_ExtFlags: %d, BPB_NumHeads: %d, BPB_SecPerTrk: %d\n", data->BPB_ExtFlags, data->BPB_NumHeads, data->BPB_SecPerTrk);
-    LOG_INFO("\tBPB_BkBootSec: %d\n", data->BPB_BkBootSec);
+    FAT32_LOG_INFO("\tBPB_ExtFlags: %d, BPB_NumHeads: %d, BPB_SecPerTrk: %d\n", data->BPB_ExtFlags, data->BPB_NumHeads, data->BPB_SecPerTrk);
+    FAT32_LOG_INFO("\tBPB_BkBootSec: %d\n", data->BPB_BkBootSec);
 
-    LOG_INFO("\tBS_jmpBoot: %x %x %x\n", data->BS_jmpBoot[0], data->BS_jmpBoot[1], data->BS_jmpBoot[2]);
+    FAT32_LOG_INFO("\tBS_jmpBoot: %x %x %x\n", data->BS_jmpBoot[0], data->BS_jmpBoot[1], data->BS_jmpBoot[2]);
 
-    LOG_INFO("\tBS_OEMName: ");
+    FAT32_LOG_INFO("\tBS_OEMName: ");
     print_char((char *)data->BS_OEMName, sizeof(data->BS_OEMName));
-    LOG_INFO("\tBS_FilSysType: ");
+    FAT32_LOG_INFO("\tBS_FilSysType: ");
     print_char((uint8_t *)data->BS_FilSysType, sizeof(data->BS_FilSysType));
-    LOG_INFO("\tBS_VolLab: ");
+    FAT32_LOG_INFO("\tBS_VolLab: ");
     print_char((uint8_t *)data->BS_VolLab, sizeof(data->BS_VolLab));
     // puts(" ");
 }
 
 void show_fs_info(FSInfo_Type *data)
 {
-    LOG_INFO("FSInfo:");
-    LOG_INFO("\tFSI_Nxt_Free: %d, FSI_Free_Count: %d\n", data->FSI_Nxt_Free, data->FSI_Free_Count);
+    FAT32_LOG_INFO("FSInfo:");
+    FAT32_LOG_INFO("\tFSI_Nxt_Free: %d, FSI_Free_Count: %d\n", data->FSI_Nxt_Free, data->FSI_Free_Count);
 }
 void show_dir_data(const FatDir_Type *file)
 {
@@ -3295,18 +3336,18 @@ void show_dir_data(const FatDir_Type *file)
     {
         return;
     }
-    LOG_INFO("DIR_Name: ");
+    FAT32_LOG_INFO("DIR_Name: ");
     print_char(file->DIR_Name, 11);
-    LOG_INFO(" DIR_Attr: %u, DIR_NTRes: %u, DIR_FstClusHI: %u, DIR_FstClusLO: %u,  DIR_FileSize: %u\n", file->DIR_Attr, file->DIR_NTRes, file->DIR_FstClusHI, file->DIR_FstClusLO, file->DIR_FileSize);
+    FAT32_LOG_INFO(" DIR_Attr: %u, DIR_NTRes: %u, DIR_FstClusHI: %u, DIR_FstClusLO: %u,  DIR_FileSize: %u\n", file->DIR_Attr, file->DIR_NTRes, file->DIR_FstClusHI, file->DIR_FstClusLO, file->DIR_FileSize);
 }
 
 void show_unicode(uint16_t *buffer, size_t length)
 {
     for (int i = 0; i < length; ++i)
     {
-        LOG_INFO("%04x ", buffer[i]);
+        FAT32_LOG_INFO("%04x ", buffer[i]);
     }
-    puts("");
+    // puts("");
 }
 
 void show_lentry_data(LDIR_Type *entry)
@@ -3314,16 +3355,16 @@ void show_lentry_data(LDIR_Type *entry)
     if (entry == NULL)
         return;
 
-    LOG_INFO("LDIR_Ord: %d,LDIR_Attr: %x, LDIR_Chksum: %d, LDIR_FstClusLO: %d, LDIR_Type: %d\n", entry->LDIR_Ord, entry->LDIR_Attr, entry->LDIR_Chksum,
-             entry->LDIR_FstClusLO, entry->LDIR_Type);
+    FAT32_LOG_INFO("LDIR_Ord: %d,LDIR_Attr: %x, LDIR_Chksum: %d, LDIR_FstClusLO: %d, LDIR_Type: %d\n", entry->LDIR_Ord, entry->LDIR_Attr, entry->LDIR_Chksum,
+                   entry->LDIR_FstClusLO, entry->LDIR_Type);
 
-    LOG_INFO("Name1: ");
+    FAT32_LOG_INFO("Name1: ");
     show_unicode((uint16_t *)entry->LDIR_Name1, sizeof(entry->LDIR_Name1) / 2);
 
-    LOG_INFO("Name2: ");
+    FAT32_LOG_INFO("Name2: ");
     show_unicode((uint16_t *)entry->LDIR_Name2, sizeof(entry->LDIR_Name2) / 2);
 
-    LOG_INFO("Name3: ");
+    FAT32_LOG_INFO("Name3: ");
     show_unicode((uint16_t *)entry->LDIR_Name3, sizeof(entry->LDIR_Name3) / 2);
 }
 
@@ -3374,12 +3415,12 @@ int mount_fat32(BlockDevice *device)
 
     if (mbr_data->Signature_word != WORD_SIGNATURE)
     {
-        LOG_INFO("MBR not valid!\n");
+        FAT32_LOG_INFO("MBR not valid!\n");
         return FAT_ERR_INVALID_MBR;
     }
     if (mbr_data->BPB_FATSz16 != 0)
     {
-        LOG_INFO("It isn't fat32!\n");
+        FAT32_LOG_INFO("It isn't fat32!\n");
         return FAT_ERR_NOT_FAT32;
     }
     // перерасчёт таблицы и памяти для провреки
@@ -3476,9 +3517,9 @@ int show_entry_fat32(uint32_t sector)
         return -1;
     }
 
-    uint8_t buffer[512];
+    uint8_t buffer[512] = {0};
     fat_info->device->read(buffer, 512, sector);
-    LOG_INFO("sector: %d\n", sector);
+    FAT32_LOG_INFO("sector: %d\n", sector);
     FatDir_Type *entry;
     for (int i = 0; i < 512; i += sizeof(FatDir_Type))
     {
@@ -3486,7 +3527,7 @@ int show_entry_fat32(uint32_t sector)
         if (entry->DIR_Name[0] == ENTRY_FREE_FULL_FAT32)
             break;
         else if (entry->DIR_Name[0] == ENTRY_FREE_FAT32)
-            LOG_INFO("entry is free!\n");
+            FAT32_LOG_INFO("entry is free!\n");
         else
         {
             if ((entry->DIR_Attr & ATTR_LONG_NAME_MASK) == ATTR_LONG_NAME)
@@ -3506,11 +3547,11 @@ int show_entry_fat32(uint32_t sector)
 void show_table_fat32(uint32_t sector)
 {
     uint32_t buffer[128];
-    LOG_INFO("table 1 sector: %d\n", sector);
+    FAT32_LOG_INFO("table 1 sector: %d\n", sector);
     fat_info->device->read((uint8_t *)buffer, 512, sector);
     for (int i = 0; i < 128; ++i)
     {
-        LOG_INFO("cluster %d: %x ", i, buffer[i]);
+        FAT32_LOG_INFO("cluster %d: %x ", i, buffer[i]);
     }
-    puts("");
+    // puts("");
 }

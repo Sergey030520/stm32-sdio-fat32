@@ -368,12 +368,6 @@ int set_inactive_state()
     return 0;
 }
 
-int get_status()
-{
-
-    return 0;
-}
-
 int init_sd()
 {
     int status = 0;
@@ -446,7 +440,7 @@ int init_sd()
 
         if (SD.voltage == 0)
         {
-            delay_timer(100); 
+            delay_timer(100);
         }
     }
 
@@ -667,28 +661,27 @@ int send_status_sd(CardStatus_Type *cs_pattern)
 
 int wait_card_ready()
 {
-    uint16_t attempts = 500; 
+    uint16_t attempts = 500;
     int status = 0;
     CardStatus_Type card_status = {0};
 
     while (attempts--)
     {
-        status = send_status_sd(&card_status); 
+        status = send_status_sd(&card_status);
         if (status == ERROR_RESPONCE)
         {
-            return status; 
+            return status;
         }
 
-        
         if (status == 0 && card_status.READY_FOR_DATA == 1 && SD.state == TRAN_STATE)
         {
-            return 0; 
+            return 0;
         }
 
-        delay_timer(10);
+        delay_timer(50);
     }
 
-    return ERROR_SD_BUSY_TIMEOUT; 
+    return ERROR_SD_BUSY_TIMEOUT;
 }
 
 int init_sd_card()
@@ -802,6 +795,7 @@ int write_single_block_sd(uint8_t *data, uint32_t size, uint32_t addres_block, u
     clear_flags_sdio(SDIO_MASK_STATIC_DATA_FLAGS);
     return wait_card_ready();
 }
+
 
 int write_multi_block_sd(uint8_t *data, uint32_t count_blocks, uint32_t address, uint32_t timeout)
 {
@@ -1152,12 +1146,34 @@ int read_blocks_dma(uint8_t *buffer, uint32_t count_blocks, uint32_t address, ui
     return 0;
 }
 
+int sd_prepare_for_erase()
+{
+    CardStatus_Type cs = {0};
+    int status = send_status_sd(&cs);
+    if (status != 0)
+        return status;
 
+    if (SD.state != TRAN_STATE)
+    {
+        send_command_sdio(CMD_STOP_TRANSMISSION, 0, SDIO_CMD_SHORT_RESP);
+        status = wait_card_ready();
+        if (status != 0)
+            return status;
+    }
+    return 0;
+}
 
 int erase_sd(uint32_t address_start, uint32_t address_end)
 {
     int status = 0;
     CardStatus_Type cs = {0};
+
+    status = sd_prepare_for_erase();
+    if (status != 0)
+    {
+        LOG_INFO("Card not ready for erase [Code: %d]", status);
+        return status;
+    }
 
     if (address_start > address_end)
     {
@@ -1225,5 +1241,46 @@ int erase_sd(uint32_t address_start, uint32_t address_end)
 
     delay_timer(100);
     return wait_card_ready();
-    ;
+}
+
+uint32_t cached_erase_chunk = 0;
+
+uint32_t get_optimal_erase_chunk(void)
+{
+    if (cached_erase_chunk != 0)
+    {
+        return cached_erase_chunk;
+    }
+
+    CSD_Type csd;
+    if (read_csd_data(&csd) < 0)
+    {
+        cached_erase_chunk = 1024;
+        return cached_erase_chunk;
+    }
+
+    uint32_t erase_size = 0;
+
+    if (csd.CSD_STRUCTURE == 0)
+    {
+        // CSD v1
+        erase_size = (csd.WP_GRP_SIZE + 1) * (csd.ERASE_BLK_EN ? 1 : 0);
+        if (erase_size == 0)
+            erase_size = 512;
+    }
+    else if (csd.CSD_STRUCTURE == 1)
+    {
+        // CSD v2
+        erase_size = (csd.WP_GRP_SIZE + 1) * 512;
+    }
+    else
+    {
+        erase_size = 1024;
+    }
+
+    if (erase_size > 4096)
+        erase_size = 4096;
+
+    cached_erase_chunk = erase_size;
+    return cached_erase_chunk;
 }

@@ -379,3 +379,5 @@ int read_blocks_dma(uint8_t *buffer, uint32_t count_blocks, uint32_t address, ui
 
 // Erase data
 int erase_sd(uint32_t address_start, uint32_t address_end);
+
+uint32_t get_optimal_erase_chunk();
