@@ -2,6 +2,7 @@
 #include "memory_map.h"
 #include "rcc.h"
 
+
 void init_timer()
 {
     RCC_Frequencies rcc_clocks = {0};

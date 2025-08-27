@@ -3,28 +3,21 @@
 #include "led.h"
 #include "usart.h"
 #include "fpu.h"
-#include "SD.h"
 #include "IRQ.h"
 #include "timer.h"
-#include "src/FAT.h"
 #include "log.h"
 #include "memory_map.h"
 #include "board_pins.h"
 
-#define DEFAULT_TIMEOUT 1000
+#include "sd_fat32.h"
+#include "usart_board.h"
+
+#include "SD.h"
 
 int init_rcc();
 int init_board();
-void init_uart();
-int init_fat32(BlockDevice *device);
 
-int clear_sd(uint32_t offset, uint32_t size);
-int read_sd(uint8_t *buffer, uint32_t count_blocks, uint32_t start_sector);
-int write_sd(const uint8_t *data, uint32_t count_blocks, uint32_t start_sector);
-int read_sd_with_dma(uint8_t *buffer, uint32_t size, uint32_t sector);
-int write_sd_with_dma(const uint8_t *data, uint32_t size, uint32_t sector);
-int usart_adapter(const char *data, int length);
-int sd_card_init();
+
 
 int main()
 {
@@ -34,22 +27,19 @@ int main()
         ledOn(13, 1);
         goto error;
     }
-    LOG_INFO("Драйверы запущены и карта инициализирована!");
-
-    BlockDevice sd_device = {
-        .clear = clear_sd,
-        .read = read_sd,
-        .write = write_sd};
-    status = init_fat32(&sd_device);
-    if (status != 0)
-    {
+    LOG_INFO("Драйверы запущены!\r\n");
+    status = init_sd_fat32();
+    if(status != 0){
+        LOG_INFO("Error init sd+fat32!(error=%d)\r\n", status);
         goto error;
     }
-    LOG_INFO("Fat32 проинициализирована!");
-
-    ledOn(15, 1);
+    // ledOn(15, 1);
     while (1)
     {
+        ledOn(14, 1);
+        delay_timer(5000);
+        ledOn(14, 0);
+        delay_timer(5000);
     }
 
 error:
@@ -147,179 +137,7 @@ int init_board()
 
     stm_init_log(usart_adapter);
 
-    status = sd_card_init();
-
-    if (status != 0)
-    {
-        ledOn(13, 1);
-        LOG_INFO("Error launch Driver sd: %d", status);
-        return -2;
-    }
     return 0;
 }
 
-int read_sd(uint8_t *buffer, uint32_t count_blocks, uint32_t start_sector)
-{
-    uint32_t chunk = get_optimal_erase_chunk(); 
-    uint32_t read = 0;
 
-    while (read < count_blocks)
-    {
-        uint32_t todo = (count_blocks - read > chunk) ? chunk : (count_blocks - read);
-        int status = read_multi_block_sd(buffer + read * 512, todo, start_sector + read, DEFAULT_TIMEOUT);
-        if (status < 0) return status;
-        read += todo;
-    }
-
-    return 0;
-}
-int write_sd(const uint8_t *data, uint32_t count_blocks, uint32_t start_sector)
-{
-    uint32_t chunk = get_optimal_erase_chunk();
-    uint32_t written = 0;
-
-    int status = wait_card_ready();
-    if (status != 0)
-    {
-        LOG_INFO("Card not ready before first write [Code: %d]", status);
-        return status;
-    }
-
-    while (written < count_blocks)
-    {
-        uint32_t todo = (count_blocks - written > chunk) ? chunk : (count_blocks - written);
-        int status = write_multi_block_sd(data + written * 512, todo, start_sector + written, DEFAULT_TIMEOUT);
-        if (status < 0)
-            return status;
-        written += todo;
-    }
-}
-
-int read_sd_with_dma(uint8_t *buffer, uint32_t size, uint32_t sector)
-{
-    return read_blocks_dma(buffer, size / 512, sector, DEFAULT_TIMEOUT);
-}
-
-int write_sd_with_dma(const uint8_t *data, uint32_t size, uint32_t sector)
-{
-    return write_blocks_dma((uint8_t *)data, size / 512, sector, DEFAULT_TIMEOUT);
-}
-
-int usart_adapter(const char *data, int length)
-{
-    send_data_usart((uint8_t *)data, (uint16_t)length);
-    return 0;
-}
-
-void init_uart()
-{
-    DMA_Config dma_tx_config = {
-        .dma = DMA2,          // DMA2 для USART1_TX
-        .stream = STREAM_7,   // Stream 7
-        .channel = CHANNEL_4, // канал для USART1_TX
-        .direction = DMA_DIR_MEM_TO_PERIPH,
-        .mem_size = DMA_MSIZE_8BITS,
-        .periph_size = DMA_PSIZE_8BITS,
-        .inc_mem = 1,
-        .inc_periph = 0,
-        .circular = 0};
-
-    GPIO_PinConfig_t tx_pin_config = {
-        .gpiox = GPIOA_REG,
-        .pin = USART1_TX_PIN,
-        .mode = GPIO_MODER_ALTERNATE,
-        .speed = GPIO_SPEED_100MHz,
-        .pull = GPIO_PULL_NONE,
-        .output = GPIO_OUTPUT_PUSHPULL,
-        .af = GPIO_AF7,
-    };
-    GPIO_PinConfig_t rx_pin_config = {
-        .gpiox = GPIOA_REG,
-        .pin = USART1_RX_PIN,
-        .mode = GPIO_MODER_ALTERNATE,
-        .speed = GPIO_SPEED_100MHz,
-        .pull = GPIO_PULL_NONE,
-        .output = GPIO_OUTPUT_PUSHPULL,
-        .af = GPIO_AF7,
-    };
-
-    // Основная конфигурация UART
-    UART_Config_t uart1_config = {
-        .usart = USART1_REG,
-        .baud_rate = UART_BAUDRATE_115200,
-        .tx_mode = UART_MODE_POLLING,
-        .rx_mode = UART_MODE_POLLING,
-        .dma_tx = dma_tx_config,   // DMA конфигурация для TX
-        .dma_rx = {0},             // RX DMA не используется
-        .tx_port = &tx_pin_config, // Пин TX
-        .rx_port = &rx_pin_config  // Пин RX (можно NULL, если RX отключен)
-    };
-
-    RCC_Frequencies rcc_clocks = {0};
-
-    get_clock_frequencies(&rcc_clocks);
-
-    setup_uart(&uart1_config, rcc_clocks.APB2_Freq);
-}
-
-int sd_card_init()
-{
-    int status = init_sd();
-    if (status != 0)
-    {
-        return -1;
-    }
-
-    status = init_sd_card();
-    if (status != 0)
-    {
-        return -2;
-    }
-    return 0;
-}
-
-int init_fat32(BlockDevice *device)
-{
-    if (device == NULL)
-    {
-        return -1;
-    }
-
-    int status = mount_fat32(device);
-    LOG_INFO("SD card is not formatted");
-    if (status != 0)
-    {
-        LOG_INFO("Formatting SD card");
-        status = formatted_fat32(device, SIZE_8GB);
-        if (status != 0)
-        {
-            return -2;
-        }
-        LOG_INFO("Retrying SD card mount");
-
-        status = mount_fat32(device);
-        if (status != 0)
-        {
-            return -3;
-        }
-    }
-
-    return 0;
-}
-
-int clear_sd(uint32_t offset, uint32_t size)
-{
-    const uint32_t chunk = get_optimal_erase_chunk();
-    uint32_t cleared = 0;
-    while (cleared < size)
-    {
-        uint32_t todo = (size - cleared > chunk) ? chunk : (size - cleared);
-        uint32_t address_start = offset + cleared;
-        uint32_t address_end = address_start + todo - 1;
-        int status = erase_sd(address_start, address_end);
-        if (status < 0)
-            return status;
-        cleared += todo;
-    }
-    return 0;
-}

@@ -11,6 +11,8 @@ set(LINKER_FILE ${CMAKE_SOURCE_DIR}/conf_mem_stm32f4/STM32F407VETX_FLASH.ld)
 add_subdirectory(drivers)
 add_subdirectory(logger)
 add_subdirectory(filesystem)
+add_subdirectory(middleware)
+
 
 set(ARM_FLAGS
     -mcpu=cortex-m4
@@ -38,14 +40,19 @@ target_compile_options(logger PRIVATE ${ARM_FLAGS})
 target_compile_options(driver_sd PRIVATE ${ARM_FLAGS})
 target_compile_options(fat32 PRIVATE ${ARM_FLAGS})
 target_compile_options(${EXECUTABLE} PRIVATE ${ARM_FLAGS})
-
+target_compile_options(middleware PRIVATE ${ARM_FLAGS})
 
 target_link_libraries(${EXECUTABLE} PRIVATE
         drivers_core
         logger
         driver_sd
         fat32
+        middleware
         m
+)
+
+target_include_directories(${EXECUTABLE} PRIVATE
+    ${CMAKE_SOURCE_DIR}/middleware
 )
 
 

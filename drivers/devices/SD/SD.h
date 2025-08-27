@@ -52,6 +52,7 @@ typedef struct
 
 
 #pragma pack(push, 1)
+//  Responce
 
 typedef struct
 {
@@ -281,7 +282,6 @@ typedef enum
 //
 typedef enum
 {
-    ERROR_WAIT_TIME = -1,
     ERROR_CRC = -2,
     ERROR_ERASE = -3,
     ERROR_ADDRESS = -4,
@@ -314,7 +314,8 @@ typedef enum
     ERROR_DATA_CRC = -32,
     ERROR_STOP_TRANSMISSION = -34,
     ERROR_START_BIT = -35,
-    ERROR_RXOVERR = -36
+    ERROR_RXOVERR = -36,
+    ERROR_WAIT_TIME = -37,
 } SD_ErrorCode;
 
 #pragma pack(push, 1)
@@ -328,11 +329,14 @@ typedef struct
     uint64_t max_size;
 } SD_Data_Type;
 
-#define CARD_SDXC 4
-#define CARD_SDSC 3
-#define CARD_V2_X 2
-#define CARD_V1_X 1
-#define CARD_V_UNKNOWN 0
+typedef enum {
+    CARD_V_UNKNOWN = 0,  
+    CARD_V1_X     = 1,  
+    CARD_V2_X     = 2, 
+    CARD_SDSC     = 3, 
+    CARD_SDHC     = 4,  
+    CARD_SDXC     = 5   
+} sd_card_version_t;
 
 #define SD_MAX_VOLT_TRIAL 40
 // Voltage

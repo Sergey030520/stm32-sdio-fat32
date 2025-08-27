@@ -1,0 +1,19 @@
+add_library(middleware
+    usart_board.h usart_board.c    
+    sd_fat32.h sd_fat32.c
+)
+
+target_include_directories(middleware PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/middleware
+    ${CMAKE_SOURCE_DIR}/drivers_core
+    ${CMAKE_SOURCE_DIR}/logger
+    ${CMAKE_SOURCE_DIR}/driver_sd
+    ${CMAKE_SOURCE_DIR}/fat32
+)
+
+target_link_libraries(middleware PRIVATE
+    drivers_core
+    logger
+    driver_sd
+    fat32
+)

@@ -8,6 +8,7 @@
         "functional": "c",
         "tuple": "c",
         "utility": "c",
-        "initializer_list": "c"
+        "initializer_list": "c",
+        "memory.h": "c"
     }
 }

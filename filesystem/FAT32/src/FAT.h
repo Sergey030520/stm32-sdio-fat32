@@ -161,10 +161,10 @@ typedef enum
 
 typedef enum
 {
-    SIZE_1GB  = 1ULL * 1024 * 1024 * 1024,
-    SIZE_2GB  = 2ULL * 1024 * 1024 * 1024,
-    SIZE_4GB  = 4ULL * 1024 * 1024 * 1024,
-    SIZE_8GB  = 8ULL * 1024 * 1024 * 1024,
+    SIZE_1GB = 1ULL * 1024 * 1024 * 1024,
+    SIZE_2GB = 2ULL * 1024 * 1024 * 1024,
+    SIZE_4GB = 4ULL * 1024 * 1024 * 1024,
+    SIZE_8GB = 8ULL * 1024 * 1024 * 1024,
     SIZE_16GB = 16ULL * 1024 * 1024 * 1024,
     SIZE_32GB = 32ULL * 1024 * 1024 * 1024
 } StorageCapacity;
@@ -198,16 +198,17 @@ typedef struct
 
 } RootDirectoryMap;
 
-typedef int (*fs_read_t)(uint8_t *buffer, uint32_t size, uint32_t address);
-typedef int (*fs_write_t)(const uint8_t *buffer, uint32_t size, uint32_t address);
-typedef int (*fs_clear_t)(uint32_t offset, uint32_t size);
+typedef int (*fs_read_t)(uint8_t *buffer, uint32_t size, uint32_t start_sector, uint32_t sector_size);
+typedef int (*fs_write_t)(const uint8_t *buffer, uint32_t size, uint32_t start_sector, uint32_t sector_size);
+typedef int (*fs_clear_t)(uint32_t sector_num, uint32_t count_sector, uint32_t sector_size);
 
-typedef struct {
+typedef struct
+{
     fs_read_t read;
     fs_write_t write;
     fs_clear_t clear;
+    uint32_t block_size;
 } BlockDevice;
-
 
 typedef struct
 {
@@ -225,21 +226,21 @@ typedef struct
 
 typedef enum
 {
-    FAT_ERR_INVALID_PATH = -10, //
-    FAT_ERR_FILE_NOT_FOUND = -11, // Файл не найден
-    FAT_ERR_DIR_NOT_FOUND = -12,// Директория не найдена
-    FAT_ERR_INVALID_ARGUMENT = -13,//Некорректный аргумент
-    FAT_ERR_PATH_TOO_LONG = -14,//Длинное имя пути
-    FAT_ERR_NAME_TOO_LONG = 15, //Длинное имя файла/директории
-    FAT_ERR_DISK_FULL = -16, // 
-    FAT_ERR_INVALID_SEEK_MODE = -17, //
-    FAT_ERR_INVALID_POSITION = -18, // Позиция смещения выходит за пределы
-    FAT_ERR_CLUSTER_CHAIN_BROKEN = -19, //  Цепочка кластеров файла нарушена 
-    FAT_ERR_UPDATE_FAILED = -20, // Ошибка обновления fat таблиц,
-    FAT_ERR_UPDATE_PARTIAL_FAIL = -21, // Обновлена только первая таблица
-    FAT_ERR_RECOVERY_FAILED = -22, //Ошибка восстановления файловой системы 
-    FAT_ERR_FS_NOT_LOADED = -23, //Файловая система не инициализирована
-    FAT_ERR_ENTRY_NOT_FOUND = -24, //
+    FAT_ERR_INVALID_PATH = -10,         //
+    FAT_ERR_FILE_NOT_FOUND = -11,       // Файл не найден
+    FAT_ERR_DIR_NOT_FOUND = -12,        // Директория не найдена
+    FAT_ERR_INVALID_ARGUMENT = -13,     // Некорректный аргумент
+    FAT_ERR_PATH_TOO_LONG = -14,        // Длинное имя пути
+    FAT_ERR_NAME_TOO_LONG = 15,         // Длинное имя файла/директории
+    FAT_ERR_DISK_FULL = -16,            //
+    FAT_ERR_INVALID_SEEK_MODE = -17,    //
+    FAT_ERR_INVALID_POSITION = -18,     // Позиция смещения выходит за пределы
+    FAT_ERR_CLUSTER_CHAIN_BROKEN = -19, //  Цепочка кластеров файла нарушена
+    FAT_ERR_UPDATE_FAILED = -20,        // Ошибка обновления fat таблиц,
+    FAT_ERR_UPDATE_PARTIAL_FAIL = -21,  // Обновлена только первая таблица
+    FAT_ERR_RECOVERY_FAILED = -22,      // Ошибка восстановления файловой системы
+    FAT_ERR_FS_NOT_LOADED = -23,        // Файловая система не инициализирована
+    FAT_ERR_ENTRY_NOT_FOUND = -24,      //
     FAT_ERR_ENTRY_CORRUPTED = -25,
     FAT_ERR_READ_FAIL = -26,
     FAT_ERR_WRITE_FAIL = -27,
@@ -257,12 +258,11 @@ typedef enum
     FAT_ERR_DELETE_FAIL = -39,
     FAT_ERR_INVALID_MBR = -40,
     FAT_ERR_NOT_FAT32 = -41,
-    FAT_ERR_NOT_FOUND = -42
+    FAT_ERR_NOT_FOUND = -42,
+    FAT_ERR_UNSUPPORTED_BLOCK_SIZE = -43,
 } Fat32Error;
 
 extern FatLayoutInfo *fat_info;
-
-
 
 /**
  * Монтирует файловую систему FAT32.
@@ -289,8 +289,8 @@ int formatted_fat32(BlockDevice *device, uint64_t capacity);
  */
 int list_directory_fat32(const char *path);
 
-/** 
-* @brief Сохраняет изменения в структуре файла на файловой системе FAT32.
+/**
+ * @brief Сохраняет изменения в структуре файла на файловой системе FAT32.
  *
  * Обновляет метаданные файла, включая размер и время последней модификации,
  * и записывает обновлённую запись каталога на носитель.
@@ -320,7 +320,7 @@ int mkdir_fat32(char *path);
  * @param mode Режим смещения: SEEK_SET (от начала), SEEK_CUR (от текущей), SEEK_END (от конца).
  * @return 0 при успехе,
  *         FAT_ERR_INVALID_ARGUMENT если передан некорректный режим,
- *         FAT_ERR_INVALID_SEEK_MODE если передан неизвестный режим смещения, 
+ *         FAT_ERR_INVALID_SEEK_MODE если передан неизвестный режим смещения,
  *         FAT_ERR_INVALID_POSITION если позиция выходит за границы файла,
  *         FAT_ERR_CLUSTER_CHAIN_BROKEN если цепочка кластеров файла нарушена,
  *         другие коды ошибок при внутренних ошибках.

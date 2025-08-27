@@ -24,9 +24,11 @@ int CmdNoRespError()
     return 0;
 }
 
+
 int CmdResp1Error(CardStatus_Type *cs_pattern)
 {
     uint32_t status = 0;
+
     do
     {
         status = SDIO->STA;
@@ -37,17 +39,20 @@ int CmdResp1Error(CardStatus_Type *cs_pattern)
         clear_flag_sdio(SDIO_MASK_STATIC_CMD_FLAGS);
         return ERROR_WAIT_TIME;
     }
+
     if (status & SDIO_STA_CCRCFAIL)
     {
         clear_flag_sdio(SDIO_MASK_STATIC_CMD_FLAGS);
         return ERROR_CRC;
     }
+
     clear_flag_sdio(SDIO_MASK_STATIC_CMD_FLAGS);
 
     CardStatus_Type *response = (CardStatus_Type *)&SDIO->RESP[0];
     SD.state = response->CURRENT_STATE;
     cs_pattern->READY_FOR_DATA = response->READY_FOR_DATA;
     cs_pattern->APP_CMD = response->APP_CMD;
+    memcpy((uint8_t*)&cs_pattern, (uint8_t *)response, sizeof(CardStatus_Type));
 
     if (response->AKE_SEQ_ERROR)
     {
@@ -197,6 +202,7 @@ int CmdResp3Error()
         return 1;
     }
     SD.state = READY_STATE;
+    SD.voltage = response->voltage;
 
     if (response->CCS)
     {
@@ -206,7 +212,6 @@ int CmdResp3Error()
     {
         SD.version = CARD_SDSC;
     }
-    SD.voltage = response->voltage;
 
     return 0;
 }
@@ -232,6 +237,8 @@ int CmdResp4Error()
     clear_flag_sdio(SDIO_MASK_STATIC_CMD_FLAGS);
     return 0;
 }
+
+
 int CmdResp6Error()
 {
     uint32_t status = 0;
@@ -275,6 +282,7 @@ int CmdResp6Error()
     SD.RCA = response->RCA;
     return 0;
 }
+
 int CmdResp7Error()
 {
     uint32_t status = 0;
@@ -311,7 +319,7 @@ int reset_sd()
     clear_flags_sdio(SDIO_MASK_STATIC_CMD_FLAGS);
     if (status)
     {
-        LOG_INFO("Command wasn't sent! Cmd: %d", CMD_GO_IDLE_STATE);
+        LOG_INFO("Command wasn't sent! Cmd: %d\r\n", CMD_GO_IDLE_STATE);
         return ERROR_SENT_DATA;
     }
     SD.state = IDLE_STATE;
@@ -350,7 +358,7 @@ int send_command_specific(uint32_t app_cmd, uint32_t arg, uint32_t format_resp)
         {
             return -3;
         }
-        LOG_INFO(" status 55: %d", status);
+        LOG_INFO(" status 55: %d\r\n", status);
     }
     send_command_sdio(app_cmd, arg, format_resp);
     return 0;
@@ -361,7 +369,7 @@ int set_inactive_state()
     send_command_sdio(CMD_GO_INACTIVE_STATE, (SD.RCA << 16), SDIO_CMD_NO_RESP);
     if (CmdNoRespError())
     {
-        LOG_INFO("Command wasn't sent! Cmd: %d", CMD_GO_INACTIVE_STATE);
+        LOG_INFO("Command wasn't sent! Cmd: %d\r\n", CMD_GO_INACTIVE_STATE);
         return ERROR_SENT_DATA;
     }
     reset_sd();
@@ -374,86 +382,90 @@ int init_sd()
     SD.RCA = 0;
 
     status = init_sdio();
-
     if (status != 0)
     {
-        ledOn(13, 1);
-        LOG_INFO("Error init sdio! Code: %d", status);
+        LOG_INFO("Error init sdio! Code: %d\r\n", status);
         return -1;
     }
 
     status = reset_sd();
-
     if (status)
     {
-        LOG_INFO("Error reset sd! Code: %d", status);
+        LOG_INFO("Error reset sd! Code: %d\r\n", status);
         return -1;
     }
 
+    // Проверяем поддержку напряжения
     status = validateOperatingVoltage();
-
     if (status == 0)
     {
         SD.version = CARD_V2_X;
-        LOG_INFO("supported VHS!");
+        LOG_INFO("supported VHS (V2.X)!");
     }
     else if (status == ERROR_WAIT_TIME)
     {
-        LOG_INFO("unsupported VHS!");
+        LOG_INFO("unsupported VHS, fallback to V1.X!\r\n");
         SD.version = CARD_V1_X;
 
         status = reset_sd();
-
         if (status)
         {
-            LOG_INFO("Error reset sd! Code: %d", status);
+            LOG_INFO("Error reset sd! Code: %d\r\n", status);
             return -1;
         }
     }
     else
     {
-        LOG_INFO("Error  sd! Code: %d", status);
+        LOG_INFO("Error sd! Code: %d\r\n", status);
         return -2;
     }
 
+    // Ждем, пока карта выйдет из busy
     int count = 0;
-    while ((++count <= SD_MAX_VOLT_TRIAL) && (SD.voltage == 0))
+    while (++count <= SD_MAX_VOLT_TRIAL)
     {
-        // CMD55 + ACMD41
         status = send_command_specific(ACMD_SEND_OP_COND,
                                        SD_HIGH_CAPACITY | SD_WINDOW_VOLTAGE,
                                        SDIO_CMD_SHORT_RESP);
         if (status)
         {
-            LOG_INFO("ACMD41 send fail, status=%d", status);
+            LOG_INFO("ACMD41 send fail, status=%d\r\n", status);
             return -1;
         }
 
-        // Проверка ответа R3
         status = CmdResp3Error();
         if (status < 0)
         {
-            LOG_INFO("ACMD41 response error: %d", status);
+            LOG_INFO("ACMD41 response error: %d\r\n", status);
             set_inactive_state();
             return -1;
         }
-
-        if (SD.voltage == 0)
+        else if (status == 1)
         {
-            delay_timer(100);
+            delay_timer(100); // карта еще busy
+        }
+        else
+        {
+            break; // карта готова, CCS установлен
         }
     }
 
     if (count > SD_MAX_VOLT_TRIAL)
+    {
+        LOG_INFO("Timeout waiting for card ready!\r\n");
         return -1;
+    }
 
-    LOG_INFO("SD {capacity type %d, voltage: %x}", SD.version, SD.voltage);
+    LOG_INFO("SD card ready: type=%s, OCR=0x%08X\r\n",
+             (SD.version == CARD_SDXC) ? "SDHC/SDXC" : "SDSC",
+             SD.voltage);
 
+    // CID
     send_command_sdio(CMD_ALL_SEND_CID, 0, SDIO_CMD_LONG_RESP);
     status = CmdResp2Error(SDIO_TYPE_R2_CID);
     if (status != 0)
     {
-        LOG_INFO("Error Cmd: %d Code: %d", CMD_ALL_SEND_CID, status);
+        LOG_INFO("Error Cmd: %d Code: %d\r\n", CMD_ALL_SEND_CID, status);
         set_inactive_state();
         return -1;
     }
@@ -462,19 +474,21 @@ int init_sd()
     for (int i = 0; i < 4; ++i)
         product_name[i] = sd_cid.PNM[i];
     product_name[4] = '\0';
-    LOG_INFO("MID %u, OID %u, product name: %s, product version: %u, serial number: %lu, MDT: %x, CRC: %u", sd_cid.manufacture_id,
-             sd_cid.OEM, product_name, sd_cid.PRV, sd_cid.PSN, sd_cid.MDT,
-             sd_cid.CRC);
+    LOG_INFO("CID: MID %u, OID %u, product %s, ver %u, SN %lu\r\n",
+             sd_cid.manufacture_id, sd_cid.OEM,
+             product_name, sd_cid.PRV, sd_cid.PSN);
 
+    // RCA
     send_command_sdio(CMD_SEND_RELATIVE_ADDR, 0, SDIO_CMD_SHORT_RESP);
     status = CmdResp6Error();
     if (status != 0)
     {
-        LOG_INFO("Error Cmd: %d Code: %d", CMD_SEND_RELATIVE_ADDR, status);
+        LOG_INFO("Error Cmd: %d Code: %d\r\n", CMD_SEND_RELATIVE_ADDR, status);
         set_inactive_state();
         return -1;
     }
     LOG_INFO("Set new RCA: %u; state: %u", SD.RCA, SD.state);
+
     return 0;
 }
 
@@ -555,7 +569,7 @@ int load_csd_sd()
     status = CmdResp2Error(SDIO_TYPE_R2_CSD);
     if (status < 0)
     {
-        LOG_INFO("Error sent cmd: %d status: %d", CMD_SEND_CSD, status);
+        LOG_INFO("Error sent cmd: %d status: %d\r\n", CMD_SEND_CSD, status);
         return -1;
     }
 
@@ -572,25 +586,38 @@ int load_csd_sd()
         uint32_t block_len = math_pow(2, (uint32_t)csd.READ_BL_LEN);
         uint32_t mult = math_pow(2, (uint32_t)csd.C_SIZE_MULT);
         SD.max_size = ((csd.C_SIZE + 1) * mult) * block_len;
-
+        SD.version = CARD_SDSC;
         LOG_INFO("VDD_W_CURR_MIN: %x, VDD_R_CURR_MIN: %x,", csd.VDD_W_CURR_MIN, csd.VDD_R_CURR_MIN);
         LOG_INFO("VDD_W_CURR_MIN: %x, VDD_R_CURR_MIN: %x,", csd.VDD_W_CURR_MAX, csd.VDD_R_CURR_MAX);
         LOG_INFO("WRITE_BL_LEN: %x, READ_BL_LEN: %x", csd.WRITE_BL_LEN, csd.READ_BL_LEN);
-        LOG_INFO("C_SIZE_MULT: %d, C_SIZE: %d", csd.C_SIZE_MULT, csd.C_SIZE);
-        LOG_INFO("SD capacity: %d", SD.max_size);
-        LOG_INFO("COPY: %x, file format: %x,", csd.COPY, csd.FILE_FORMAT);
+        LOG_INFO("C_SIZE_MULT: %d, C_SIZE: %d\r\n", csd.C_SIZE_MULT, csd.C_SIZE);
+        LOG_INFO("SD capacity: %d\r\n", SD.max_size);
+        LOG_INFO("COPY: %x, file format: %x\r\n", csd.COPY, csd.FILE_FORMAT);
     }
     else if (csd.CSD_STRUCTURE == CSD_VERSION_2)
     {
         SD.max_size = (csd.C_SIZE + 1) * (512 * 1024);
         LOG_INFO("WRITE_BL_LEN: %d, READ_BL_LEN: %x", csd.WRITE_BL_LEN, csd.READ_BL_LEN);
-        LOG_INFO("SD capacity: %d", SD.max_size);
+        LOG_INFO("SD capacity: %d\r\n", SD.max_size);
         LOG_INFO("C_SIZE: %d, ", csd.C_SIZE);
-        LOG_INFO("COPY: %x, file format: %x,", csd.COPY, csd.FILE_FORMAT);
+        LOG_INFO("COPY: %x, file format: %x\r\n", csd.COPY, csd.FILE_FORMAT);
+
+        uint32_t capacity_gb = SD.max_size / (1024UL * 1024UL * 1024UL);
+        LOG_INFO("capacity_gb: %d\r\n", capacity_gb);
+
+        if (capacity_gb > 32)
+        {
+            SD.version = CARD_SDXC;
+        }
+        else
+        {
+            SD.version = CARD_SDHC;
+        }
+        LOG_INFO("Card version: %d\r\n", SD.version);
     }
     else
     {
-        LOG_INFO("Stnadart CSD version > 2 unsupported!");
+        LOG_INFO("Stnadart CSD version > 2 unsupported!\r\n");
         return WARNING_CSD_UNSUPPORTED_VERSION;
     }
 
@@ -602,41 +629,41 @@ void show_state()
     switch (SD.state)
     {
     case IDLE_STATE:
-        LOG_INFO("SD state: IDLE");
+        LOG_INFO("SD state: IDLE\r\n");
         break;
     case READY_STATE:
-        LOG_INFO("SD state: READY");
+        LOG_INFO("SD state: READY\r\n");
         break;
     case IDENT_STATE:
-        LOG_INFO("SD state: IDENT");
+        LOG_INFO("SD state: IDENT\r\n");
         break;
 
     case STBY_STATE:
-        LOG_INFO("SD state: STBY");
+        LOG_INFO("SD state: STBY\r\n");
         break;
 
     case TRAN_STATE:
-        LOG_INFO("SD state: TRAN");
+        LOG_INFO("SD state: TRAN\r\n");
         break;
 
     case DATA_STATE:
-        LOG_INFO("SD state: DATA");
+        LOG_INFO("SD state: DATA\r\n");
         break;
 
     case RCV_STATE:
-        LOG_INFO("SD state: RCV");
+        LOG_INFO("SD state: RCV\r\n");
         break;
 
     case PRG_STATE:
-        LOG_INFO("SD state: PRG");
+        LOG_INFO("SD state: PRG\r\n");
         break;
 
     case DIS_STATE:
-        LOG_INFO("SD state: DIS");
+        LOG_INFO("SD state: DIS\r\n");
         break;
 
     case INA_STATE:
-        LOG_INFO("SD state: INA");
+        LOG_INFO("SD state: INA\r\n");
         break;
     }
 }
@@ -653,7 +680,7 @@ int send_status_sd(CardStatus_Type *cs_pattern)
 
     if (status == ERROR_WAIT_TIME || status == ERROR_CRC)
     {
-        LOG_INFO("Error sent cmd: %d, error: %d;", CMD_SEND_STATUS, status);
+        LOG_INFO("Error sent cmd: %d, error: %d\r\n", CMD_SEND_STATUS, status);
         return ERROR_RESPONCE;
     }
     return status;
@@ -670,7 +697,7 @@ int wait_card_ready()
         status = send_status_sd(&card_status);
         if (status == ERROR_RESPONCE)
         {
-            return status;
+            return ERROR_RESPONCE;
         }
 
         if (status == 0 && card_status.READY_FOR_DATA == 1 && SD.state == TRAN_STATE)
@@ -703,7 +730,7 @@ int init_sd_card()
     }
     if (status < 0)
     {
-        LOG_INFO("Error recv cmd: %d code: %d", CMD_SELECT_CARD, status);
+        LOG_INFO("Error recv cmd: %d code: %d\r\n", CMD_SELECT_CARD, status);
         return -2;
     }
     LOG_INFO("Card [rsa: %d] select!", SD.RCA);
@@ -712,7 +739,7 @@ int init_sd_card()
     status = send_command_specific(ACMD_SET_BUS_WIDTH, BIT4_WIDTH_SD, SDIO_CMD_SHORT_RESP);
     if (status < 0)
     {
-        LOG_INFO("Command wasn't sent! Cmd: %d Code: %d", ACMD_SET_BUS_WIDTH, status);
+        LOG_INFO("Command wasn't sent! Cmd: %d Code: %d\r\n", ACMD_SET_BUS_WIDTH, status);
     }
 
     memset((uint8_t *)&cs_pattern, 0, sizeof(CardStatus_Type));
@@ -720,13 +747,13 @@ int init_sd_card()
     status = CmdResp1Error(&cs_pattern);
     if (status < 0)
     {
-        LOG_INFO("Error Cmd: %d Code: %d", ACMD_SET_BUS_WIDTH, status);
+        LOG_INFO("Error Cmd: %d Code: %d\r\n", ACMD_SET_BUS_WIDTH, status);
         set_inactive_state();
         return -3;
     }
 
     set_bus_width_sdio(WIDE_BUS_4BIT_MODE);
-    LOG_INFO("Set BUS width %d", 4);
+    LOG_INFO("Set BUS width %d\r\n", 4);
 
     // настраиваем частотут тактирования
     set_clock_frequency_sdio(2);
@@ -734,29 +761,46 @@ int init_sd_card()
     return 0;
 }
 
-int write_single_block_sd(uint8_t *data, uint32_t size, uint32_t addres_block, uint32_t timeout)
+int write_single_block_sd(uint8_t *data, uint32_t size, uint32_t address, uint32_t timeout)
 {
     int status = 0;
-    Card_Status cs_pattern = {0};
+    CardStatus_Type cs_pattern = {0};
 
     if (size != 512)
     {
         return -10;
     }
 
+    if (SD.version == CARD_SDSC)
+    {
+        address *= 512;
+    }
+    LOG_INFO("write_single_block_sd: address: %d, size: %d, card version: %d\r\n", address, size, SD.version);
+
     SDIO->DCTRL = 0;
 
-    sdio_config_data(SDIO_DCTRL_DBLOCKSIZE(BLOCK_SIZE_512B) | SDIO_DCTRL_DTEN, 512, timeout);
-
-    // set address write
-    send_command_sdio(CMD_WRITE_BLOCK, addres_block, SDIO_CMD_SHORT_RESP);
-    status = CmdResp1Error((CardStatus_Type *)&cs_pattern);
-    if (status < 0)
-    {
-        LOG_INFO("Error set address block for write [Code error: %d]", status);
-        return -1;
+    status = wait_card_ready();
+    if(status != 0){
+        return status;
     }
 
+    sdio_config_data(SDIO_DCTRL_DBLOCKSIZE(BLOCK_SIZE_512B) | SDIO_DCTRL_DTEN, size, timeout);
+
+    // set address write
+    send_command_sdio(CMD_WRITE_BLOCK, address, SDIO_CMD_SHORT_RESP);
+    status = CmdResp1Error((CardStatus_Type *)&cs_pattern);
+    LOG_INFO("CMD24 resp: status=%d, ready=%d, addr_err=%d, block_err=%d\r\n",
+             status,
+             cs_pattern.READY_FOR_DATA,
+             cs_pattern.ADDRESS_OUT_OF_RANGE,
+             cs_pattern.BLOCK_LEN_ERROR);
+
+    if (status < 0)
+    {
+        LOG_INFO("Error set address block for write [Code error: %d]\r\n", status);
+        return -1;
+    }
+    
     // uint32_t *ptrBuffTx = (uint32_t *)data;
 
     uint32_t *temp_buff = (uint32_t *)data;
@@ -796,7 +840,6 @@ int write_single_block_sd(uint8_t *data, uint32_t size, uint32_t addres_block, u
     return wait_card_ready();
 }
 
-
 int write_multi_block_sd(uint8_t *data, uint32_t count_blocks, uint32_t address, uint32_t timeout)
 {
     int status = 0;
@@ -811,7 +854,7 @@ int write_multi_block_sd(uint8_t *data, uint32_t count_blocks, uint32_t address,
             return 0;
     }
 
-    if (SD.version != CARD_SDXC)
+    if (SD.version == CARD_SDSC)
     {
         address *= 512;
     }
@@ -825,7 +868,7 @@ int write_multi_block_sd(uint8_t *data, uint32_t count_blocks, uint32_t address,
     if (status != 0)
     {
         clear_flags_sdio(SDIO_MASK_STATIC_CMD_FLAGS);
-        LOG_INFO("Error set address for CMD_WRITE_MULTIPLE_BLOCK [Code error: %d]", status);
+        LOG_INFO("Error set address for CMD_WRITE_MULTIPLE_BLOCK [Code error: %d]\r\n", status);
         return -1;
     }
 
@@ -853,7 +896,7 @@ int write_multi_block_sd(uint8_t *data, uint32_t count_blocks, uint32_t address,
         if (status != 0)
         {
             clear_flags_sdio(SDIO_MASK_STATIC_DATA_FLAGS);
-            LOG_INFO("Error stop transmission [Code error: %d]", status);
+            LOG_INFO("Error stop transmission [Code error: %d]\r\n", status);
             return -1;
         }
     }
@@ -907,7 +950,7 @@ int write_blocks_dma(uint8_t *data, uint32_t count_blocks, uint32_t address, uin
     if (status != 0)
     {
         clear_flags_sdio(SDIO_MASK_STATIC_CMD_FLAGS);
-        LOG_INFO("Error set address for CMD_WRITE_MULTIPLE_BLOCK [Code error: %d]", status);
+        LOG_INFO("Error set address for CMD_WRITE_MULTIPLE_BLOCK [Code error: %d]\r\n", status);
         return -1;
     }
 
@@ -940,7 +983,7 @@ int write_blocks_dma(uint8_t *data, uint32_t count_blocks, uint32_t address, uin
         {
             clear_flags_sdio(SDIO_MASK_STATIC_DATA_FLAGS);
             reset_flags_dma(DMA2, stream);
-            LOG_INFO("Error stop transmission [Code error: %d]", status);
+            LOG_INFO("Error stop transmission [Code error: %d]\r\n", status);
             return -1;
         }
     }
@@ -949,7 +992,7 @@ int write_blocks_dma(uint8_t *data, uint32_t count_blocks, uint32_t address, uin
     {
         clear_flags_sdio(SDIO_MASK_STATIC_DATA_FLAGS);
         reset_flags_dma(DMA2, stream);
-        LOG_INFO("Data CRC error during transmission");
+        LOG_INFO("Data CRC error during transmission\r\n");
         return ERROR_DATA_CRC;
     }
 
@@ -957,7 +1000,7 @@ int write_blocks_dma(uint8_t *data, uint32_t count_blocks, uint32_t address, uin
     {
         clear_flags_sdio(SDIO_MASK_STATIC_DATA_FLAGS);
         reset_flags_dma(DMA2, stream);
-        LOG_INFO("Transmit underflow error");
+        LOG_INFO("Transmit underflow error\r\n");
         return ERROR_TXUNDER;
     }
 
@@ -965,7 +1008,7 @@ int write_blocks_dma(uint8_t *data, uint32_t count_blocks, uint32_t address, uin
     {
         clear_flags_sdio(SDIO_MASK_STATIC_DATA_FLAGS);
         reset_flags_dma(DMA2, stream);
-        LOG_INFO("Transmission timeout");
+        LOG_INFO("Transmission timeout\r\n");
         return ERROR_WAIT_TIME;
     }
 
@@ -987,7 +1030,7 @@ int read_single_block_sd(uint8_t *buffer, uint32_t size_buff, uint32_t address, 
 
     SDIO->DCTRL = 0;
 
-    if (SD.version != CARD_SDXC)
+    if (SD.version == CARD_SDSC)
     {
         address *= 512U;
     }
@@ -996,7 +1039,7 @@ int read_single_block_sd(uint8_t *buffer, uint32_t size_buff, uint32_t address, 
     status = CmdResp1Error((CardStatus_Type *)&cs_pattern);
     if (status < 0)
     {
-        LOG_INFO("Error set address block [error: %d]!", status);
+        LOG_INFO("Error set address block [error: %d]!\r\n", status);
         return -1;
     }
 
@@ -1059,7 +1102,7 @@ int read_multi_block_sd(uint8_t *buffer, uint32_t count_blocks, uint32_t address
             return 0;
     }
 
-    if (SD.version != CARD_SDXC)
+    if (SD.version == CARD_SDSC)
     {
         address *= 512;
     }
@@ -1072,7 +1115,7 @@ int read_multi_block_sd(uint8_t *buffer, uint32_t count_blocks, uint32_t address
     status = CmdResp1Error(&cs);
     if (status != 0)
     {
-        LOG_INFO("Error set address for CMD_READ_MULTIPLE_BLOCK [Error code: %d]", status);
+        LOG_INFO("Error set address for CMD_READ_MULTIPLE_BLOCK [Error code: %d]\r\n", status);
         return -1;
     }
 
@@ -1099,7 +1142,7 @@ int read_multi_block_sd(uint8_t *buffer, uint32_t count_blocks, uint32_t address
         if (status != 0)
         {
             clear_flags_sdio(SDIO_MASK_STATIC_DATA_FLAGS);
-            LOG_INFO("Error stop transmission [Error code %d]", status);
+            LOG_INFO("Error stop transmission [Error code %d]\r\n", status);
             return -1;
         }
     }
@@ -1171,7 +1214,7 @@ int erase_sd(uint32_t address_start, uint32_t address_end)
     status = sd_prepare_for_erase();
     if (status != 0)
     {
-        LOG_INFO("Card not ready for erase [Code: %d]", status);
+        LOG_INFO("Card not ready for erase [Code: %d]\r\n", status);
         return status;
     }
 
@@ -1193,7 +1236,7 @@ int erase_sd(uint32_t address_start, uint32_t address_end)
 
     if (!(csd.CCC & CARD_CLASS_5))
     {
-        LOG_INFO("Error class unsupported [%x]", csd.CCC);
+        LOG_INFO("Error class unsupported [%x]\r\n", csd.CCC);
         return 1;
     }
 
@@ -1206,7 +1249,7 @@ int erase_sd(uint32_t address_start, uint32_t address_end)
     status = wait_card_ready();
     if (status != 0)
     {
-        LOG_INFO("Card not ready before erase start [Code: %d]", status);
+        LOG_INFO("Card not ready before erase start [Code: %d]\r\n", status);
         return status;
     }
 
@@ -1215,7 +1258,7 @@ int erase_sd(uint32_t address_start, uint32_t address_end)
     if (status != 0)
     {
         clear_flags_sdio(SDIO_MASK_STATIC_DATA_FLAGS);
-        LOG_INFO("Error set erase start address [%d] [Code error: %d]", address_start, status);
+        LOG_INFO("Error set erase start address [%d] [Code error: %d]\r\n", address_start, status);
         return -1;
     }
 
@@ -1224,7 +1267,7 @@ int erase_sd(uint32_t address_start, uint32_t address_end)
     if (status != 0)
     {
         clear_flags_sdio(SDIO_MASK_STATIC_DATA_FLAGS);
-        LOG_INFO("Error set erase end address [Code error: %d]", status);
+        LOG_INFO("Error set erase end address [Code error: %d]\r\n", status);
         return -1;
     }
 
@@ -1234,12 +1277,12 @@ int erase_sd(uint32_t address_start, uint32_t address_end)
     if (status != 0)
     {
         clear_flags_sdio(SDIO_MASK_STATIC_DATA_FLAGS);
-        LOG_INFO("Error set erase end address [Code error: %d]", status);
+        LOG_INFO("Error set erase end address [Code error: %d]\r\n", status);
         return -1;
     }
     clear_flags_sdio(SDIO_MASK_STATIC_DATA_FLAGS);
 
-    delay_timer(100);
+    delay_timer(500);
     return wait_card_ready();
 }
 
