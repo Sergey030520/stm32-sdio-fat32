@@ -1,6 +1,7 @@
 add_library(middleware
     usart_board.h usart_board.c    
     sd_fat32.h sd_fat32.c
+    sd_fat32_test.h sd_fat32_test.c
 )
 
 target_include_directories(middleware PUBLIC

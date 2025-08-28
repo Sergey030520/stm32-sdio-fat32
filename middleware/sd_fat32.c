@@ -1,5 +1,4 @@
 #include "sd_fat32.h"
-#include "src/FAT.h"
 #include "SD.h"
 #include <stdio.h>
 #include "log.h"
@@ -10,6 +9,9 @@
 
 #define DEFAULT_TIMEOUT 1000000
 #define BLOCK_SIZE 512
+
+
+
 
 BlockDevice sd_device = {
     .clear = clear_sd,
@@ -48,8 +50,7 @@ int init_fat32(BlockDevice *device)
         return -1;
     }
 
-    int status = -1; 
-    // mount_fat32(device);
+    int status = mount_fat32(device);
     LOG_INFO("SD card is not formatted");
     if (status != 0)
     {
@@ -212,58 +213,70 @@ int clear_sd(uint32_t sector_num, uint32_t sector_count, uint32_t sector_size)
     uint32_t offset = (sector_count * sector_size + sd_device.block_size - 1) / sd_device.block_size;
     return erase_sd(block_start, offset);
 }
-/*
-status = sd_card_init();
-    if(status != 0){
-        LOG_INFO("SD драйвер не запущен! (error=%d)\r\n",status);
-        goto error;
-    }
 
-    // status = erase_sd(0, 65568);
-    status = clear_sd(0, 65568);
-    if (status != 0)
-    {
-        LOG_INFO("Erase error: %d\r\n", status);
-    }
-    else
-    {
-        LOG_INFO("Data erase!\r\n");
-    }
-    uint8_t buff[512] = {0};
-    for (int i = 0; i < 512; i += 2)
-    {
-        *((uint16_t *)&buff[i]) = 0x55AA;
-    }
-    // status = write_multi_block_sd(buff, 1, 0,1000000);
 
-    status = write_sd(buff, 1, 0);
+int sd_fat32_open(const char *path, SD_FAT32_File *sf_file, int mode) {
+    sf_file->file = NULL;
+    sf_file->index = 0;
+    int status = open_file_fat32(path, &sf_file->file, mode);
+    if (status == 0) {
+        LOG_INFO("File opened: %s", path);
+    } else {
+        LOG_INFO("Failed to open file %s (err=%d)", path, status);
+    }
+    return status;
+}
 
-    if (status != 0)
-    {
-        LOG_INFO("Write error: %d\r\n", status);
-    }
-    else
-    {
-        LOG_INFO("Data write!\r\n");
-    }
+int sd_fat32_exists(const char *path) {
+    int status = path_exists_fat32(path);
+    LOG_INFO("%s %s", path, status == 0 ? "exists" : "does not exist");
+    return status;
+}
 
-    uint8_t buff_rx[512] = {0};
-    // status = read_multi_block_sd(buff_rx, 1, 0, 1000000);
-    status = read_sd(buff_rx, 1, 0);
-    if (status != 0)
-    {
-        LOG_INFO("Read error: %d\r\n", status);
-    }
-    else
-    {
-        int count = 0;
-        for (int i = 0; i < 512; i += 2)
-        {
-            if (buff_rx[i] != buff[i])
-            {
-                count += 1;
+int sd_fat32_write(SD_FAT32_File *sf_file, const uint8_t *data, uint32_t len) {
+    uint32_t remaining = len;
+    const uint8_t *ptr = data;
+
+    while (remaining > 0) {
+        uint32_t space = SD_FAT32_BUFFER_SIZE - sf_file->index;
+        uint32_t to_copy = remaining < space ? remaining : space;
+        memcpy(&sf_file->buffer[sf_file->index], ptr, to_copy);
+        sf_file->index += to_copy;
+        ptr += to_copy;
+        remaining -= to_copy;
+
+        if (sf_file->index == SD_FAT32_BUFFER_SIZE) {
+            int status = write_file_fat32(sf_file->file, sf_file->buffer, SD_FAT32_BUFFER_SIZE);
+            if (status != 0) {
+                LOG_INFO("Write to SD failed (err=%d)", status);
+                return status;
             }
+            sf_file->index = 0;
         }
-        LOG_INFO("Compare with: %d\r\n", count);
     }
-*/
+    return 0;
+}
+
+int sd_fat32_flush(SD_FAT32_File *sf_file) {
+    if (sf_file->index > 0) {
+        int status = write_file_fat32(sf_file->file, sf_file->buffer, sf_file->index);
+        if (status != 0) {
+            LOG_INFO("Flush failed (err=%d)", status);
+            return status;
+        }
+        sf_file->index = 0;
+        LOG_INFO("Buffer flushed to SD");
+    }
+    return 0;
+}
+
+int sd_fat32_close(SD_FAT32_File *sf_file) {
+    sd_fat32_flush(sf_file);
+    int status = close_file_fat32(sf_file->file);
+    if (status != 0) {
+        LOG_INFO("Close failed (err=%d)", status);
+    } else {
+        LOG_INFO("File closed");
+    }
+    return status;
+}

@@ -10,9 +10,12 @@
 #include "board_pins.h"
 
 #include "sd_fat32.h"
-#include "usart_board.h"
+#include "sd_fat32_test.h"
 
-#include "SD.h"
+#include "usart_board.h"
+#include "src/FAT.h"
+
+
 
 int init_rcc();
 int init_board();
@@ -33,6 +36,13 @@ int main()
         LOG_INFO("Error init sd+fat32!(error=%d)\r\n", status);
         goto error;
     }
+    
+    sd_fat32_create_directory_test();
+    sd_fat32_create_file_test();
+    sd_fat32_write_file_test();
+    sd_fat32_write_and_read_test();
+    
+    
     // ledOn(15, 1);
     while (1)
     {

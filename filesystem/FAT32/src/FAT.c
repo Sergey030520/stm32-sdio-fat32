@@ -749,7 +749,7 @@ int flush_fat32(FAT32_File *file)
     DateType date = {0};
     TimeType time = {0};
 
-    status = get_cur_time_and_date(&date, &time);
+    // status = get_cur_time_and_date(&date, &time);
     if (status == 0)
     {
         entry.DIR_WrtDate = convert_date_to_fat(&date);
@@ -1994,7 +1994,8 @@ int create_dir_fat32(char *name, uint32_t length, uint32_t parent_cluster)
     DateType date = {0};
     TimeType time = {0};
 
-    status = get_cur_time_and_date(&date, &time);
+    // status = get_cur_time_and_date(&date, &time);
+
     entry->DIR_Attr = ATTR_DIRECTORY;
     if (status == 0)
     {
@@ -3212,26 +3213,25 @@ int formatted_fat32(BlockDevice *device, uint64_t capacity)
     {
         records[idx] = FREE_CLUSTER;
     }
-    int idxSector = 0;
 
-    for (int idxSector = 0; idxSector < mbr_data.BPB_FATSz32;  idx+=sectors_per_write)
+    for (idx = 0; idx < mbr_data.BPB_FATSz32;  idx+=sectors_per_write)
     {
-        status = device->write((uint8_t *)records, sectors_per_write, (tabl1_addr + idxSector),mbr_data.BPB_BytsPerSec);
+        status = device->write((uint8_t *)records, sectors_per_write, (tabl1_addr + idx),mbr_data.BPB_BytsPerSec);
         if (status < 0)
         {
             FAT32_LOG_INFO("Error device write sector of table 1 (sector: %d, status: %d)!\r\n",
-                           tabl1_addr + idxSector, status);
+                           tabl1_addr + idx, status);
             return FAT_ERR_WRITE_FAIL;
         }
         
     }
-    for (; idxSector < mbr_data.BPB_FATSz32;  idx+=sectors_per_write)
+    for (idx = 0; idx < mbr_data.BPB_FATSz32;  idx+=sectors_per_write)
     {
-        status = device->write((uint8_t *)records, sectors_per_write, (tabl2_addr + idxSector), mbr_data.BPB_BytsPerSec);
+        status = device->write((uint8_t *)records, sectors_per_write, (tabl2_addr + idx), mbr_data.BPB_BytsPerSec);
         if (status < 0)
         {
             FAT32_LOG_INFO("Error device write sector of table 2 (sector: %d, status: %d)!\r\n",
-                           tabl2_addr + idxSector, status);
+                           tabl2_addr + idx, status);
             return FAT_ERR_WRITE_FAIL;
         }        
     }
