@@ -1,0 +1,3 @@
+[submodule "filesystems-ufat32"]
+	path = filesystems-ufat32
+	url = https://github.com/Sergey030520/ufat32.git

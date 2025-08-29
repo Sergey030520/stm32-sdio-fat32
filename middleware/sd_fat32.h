@@ -2,7 +2,7 @@
 
 
 #include <stdint.h>
-#include "src/FAT.h"
+#include "fat32/FAT32.h"
 
 
 #define SD_FAT32_BUFFER_SIZE 2560  

@@ -9,6 +9,7 @@
         "tuple": "c",
         "utility": "c",
         "initializer_list": "c",
-        "memory.h": "c"
+        "memory.h": "c",
+        "sd_fat32.h": "c"
     }
 }
