@@ -36,10 +36,9 @@ int main()
     }
     
     sd_fat32_create_directory_test();
-    sd_fat32_create_file_test();
-    sd_fat32_write_file_test();
-    sd_fat32_write_and_read_test();
-    
+    // sd_fat32_write_file_test();
+    // sd_fat32_write_and_read_test();
+    sd_fat32_append_data_test();
     
     // ledOn(15, 1);
     while (1)
@@ -111,7 +110,7 @@ int init_rcc()
     }
 
     peripheral_conf.APB1 = RCC_APB1ENR_TIM2EN | RCC_APB1ENR_PWREN;
-    peripheral_conf.APB2 = RCC_APB2ENR_USART1EN;
+    peripheral_conf.APB2 = RCC_APB2ENR_USART1EN | RCC_APB2ENR_SYSCFGEN;
     peripheral_conf.AHB1 = RCC_AHB1ENR_DMA2EN | RCC_AHB1ENR_GPIOAEN | RCC_AHB1ENR_BKPSRAMEN;
     peripheral_conf.AHB2 = 0;
     peripheral_conf.AHB3 = 0;

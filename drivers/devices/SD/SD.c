@@ -775,7 +775,7 @@ int write_single_block_sd(uint8_t *data, uint32_t size, uint32_t address, uint32
     {
         address *= 512;
     }
-    LOG_INFO("write_single_block_sd: address: %d, size: %d, card version: %d\r\n", address, size, SD.version);
+    // LOG_INFO("write_single_block_sd: address: %d, size: %d, card version: %d\r\n", address, size, SD.version);
 
     SDIO->DCTRL = 0;
 
@@ -789,11 +789,11 @@ int write_single_block_sd(uint8_t *data, uint32_t size, uint32_t address, uint32
     // set address write
     send_command_sdio(CMD_WRITE_BLOCK, address, SDIO_CMD_SHORT_RESP);
     status = CmdResp1Error((CardStatus_Type *)&cs_pattern);
-    LOG_INFO("CMD24 resp: status=%d, ready=%d, addr_err=%d, block_err=%d\r\n",
-             status,
-             cs_pattern.READY_FOR_DATA,
-             cs_pattern.ADDRESS_OUT_OF_RANGE,
-             cs_pattern.BLOCK_LEN_ERROR);
+    // LOG_INFO("CMD24 resp: status=%d, ready=%d, addr_err=%d, block_err=%d\r\n",
+    //          status,
+    //          cs_pattern.READY_FOR_DATA,
+    //          cs_pattern.ADDRESS_OUT_OF_RANGE,
+    //          cs_pattern.BLOCK_LEN_ERROR);
 
     if (status < 0)
     {
@@ -1039,8 +1039,8 @@ int read_single_block_sd(uint8_t *buffer, uint32_t size_buff, uint32_t address, 
     status = CmdResp1Error((CardStatus_Type *)&cs_pattern);
     if (status < 0)
     {
-        LOG_INFO("Error set address block [error: %d]!\r\n", status);
-        return -1;
+        LOG_INFO("Error set address block [address: %d, error: %d]!\r\n", address, status);
+        return status;
     }
 
     sdio_config_data(SDIO_DCTRL_DBLOCKSIZE(BLOCK_SIZE_512B) | SDIO_DCTRL_DTDIR | SDIO_DCTRL_DTEN, 512, timeout);

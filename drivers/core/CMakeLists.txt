@@ -9,8 +9,10 @@ add_library(${LIBRARY_CORE_NAME} STATIC
     gpio.h gpio.c
     rcc.h rcc.c
     led.h led.c
+    pwr.h pwr.c
     timer.h timer.c
     usart.h usart.c
+    RTC.h RTC.c
     dma.h dma.c
     IRQ.h IRQ.c
     sysmem.c

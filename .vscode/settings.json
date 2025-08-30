@@ -15,6 +15,7 @@
         "fat32.h": "c",
         "block_device.h": "c",
         "fat32_types.h": "c",
-        "log_stm.h": "c"
+        "log_stm.h": "c",
+        "string.h": "c"
     }
 }

@@ -86,7 +86,7 @@ typedef struct
 #define GET_RTS_value(value, pos_tens, mask_tens, pos_units, mask_units) (GET_RTS_BITFIELD(value, pos_tens, mask_tens) * 10 + GET_RTS_BITFIELD(value, pos_units, mask_units)) 
 #define SET_RTS_value(value, pos_tens, mask_tens, pos_units, mask_units) ((((uint32_t)(value / 10) & mask_tens) << pos_tens) | ((uint32_t)((value % 10) & mask_units) << pos_units))
 
-#define BSD_START_YEAR 2000
+#define BSD_START_YEAR 1980
 #define BSD_MAX_YEAR 99
 // TR
 #define RTC_TR_PM (0x1 << 22)

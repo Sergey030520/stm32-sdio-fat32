@@ -7,6 +7,8 @@
 #include "pool_memory.h"
 #include "fat32/fat32_alloc.h"
 #include "log_stm.h"
+#include "RTC.h"
+
 
 #define DEFAULT_TIMEOUT 1000000
 #define BLOCK_SIZE 512
@@ -25,6 +27,8 @@ int sd_card_init();
 
 int write_safe_sd(const uint8_t *data, uint32_t count_blocks, uint32_t block_start, uint32_t timeout);
 int read_safe_sd(uint8_t *buffer, uint32_t count_blocks, uint32_t block_start, uint32_t timeout);
+
+int sd_fat32_get_datetime(Fat32_DateTime *dt);
 
 int sd_card_init()
 {
@@ -49,7 +53,7 @@ int init_fat32(BlockDevice *device)
         return -1;
     }
 
-    fat32_set_logger(stm_log);
+    fat32_set_logger(fat32_stm_log);
 
     fat32_allocator.alloc = pool_alloc;
     fat32_allocator.free = pool_free_region;
@@ -81,20 +85,31 @@ int init_fat32(BlockDevice *device)
 
 int init_sd_fat32()
 {
-    int status = sd_card_init();
+    int status = init_rtc();
     if (status != 0)
     {
-        LOG_INFO("Error launch Driver sd: %d", status);
-        return -1;
+        LOG_INFO("Error launch Driver RTC: %d\r\n", status);
     }
-    LOG_INFO("SD проинициализирована!");
+    else
+    {
+        LOG_INFO("RTC initialized and datetime callback set\r\n");
+        sd_device.datetime = sd_fat32_get_datetime;
+    }
+
+    status = sd_card_init();
+    if (status != 0)
+    {
+        LOG_INFO("Error launch Driver sd: %d\r\n", status);
+        return -2;
+    }
+    LOG_INFO("SD initialized!\r\n");
 
     status = init_fat32(&sd_device);
     if (status != 0)
     {
-        return -2;
+        return -3;
     }
-    LOG_INFO("Fat32 проинициализирована!");
+    LOG_INFO("Fat32 initialized!\r\n");
     return 0;
 }
 
@@ -297,7 +312,7 @@ int sd_fat32_flush(SD_FAT32_File *sf_file)
 int sd_fat32_close(SD_FAT32_File *sf_file)
 {
     sd_fat32_flush(sf_file);
-    int status = close_file_fat32(sf_file->file);
+    int status = close_file_fat32(&sf_file->file);
     if (status != 0)
     {
         LOG_INFO("Close failed (err=%d)", status);
@@ -307,4 +322,20 @@ int sd_fat32_close(SD_FAT32_File *sf_file)
         LOG_INFO("File closed");
     }
     return status;
+}
+
+int sd_fat32_get_datetime(Fat32_DateTime *dt)
+{
+    RTC_DateTime_Type rtc;
+    if (get_datetime_rtc(&rtc) != 0)
+        return -1;
+
+    dt->date.year = rtc.date.year;
+    dt->date.month = rtc.date.month;
+    dt->date.day = rtc.date.day;
+    dt->time.hour = rtc.time.hour;
+    dt->time.minute = rtc.time.minute;
+    dt->time.second = rtc.time.seconds;
+
+    return 0;
 }
