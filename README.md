@@ -10,7 +10,7 @@
 ![C](https://github.com/tandpfun/skill-icons/blob/main/icons/C.svg) 
 ![CMake](https://github.com/tandpfun/skill-icons/blob/main/icons/CMake-Dark.svg) 
 ![VSCode](https://github.com/tandpfun/skill-icons/blob/main/icons/VSCode-Dark.svg) 
-![Git](https://www.vectorlogo.zone/logos/git-scm/git-scm-icon.svg) 
+![Git](https://github.com/tandpfun/skill-icons/blob/main/icons/Git.svg) 
 
 # STM32 SDIO + FAT32
 
