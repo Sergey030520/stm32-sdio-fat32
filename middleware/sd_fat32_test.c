@@ -11,11 +11,11 @@ int sd_fat32_create_directory_test()
     int status = mkdir_fat32(path);
     if (status == 0)
     {
-        LOG_INFO("Directory created: %s", path);
+        LOG_INFO("Directory created: %s\r\n", path);
     }
     else
     {
-        LOG_INFO("Failed to create directory %s (err=%d)", path, status);
+        LOG_INFO("Failed to create directory %s (err=%d)\r\n", path, status);
     }
     return status;
 }
@@ -33,7 +33,7 @@ int sd_fat32_create_file_test()
     }
     else
     {
-        LOG_INFO("Failed to create file %s (err=%d)", path, status);
+        LOG_INFO("Failed to create file %s (err=%d)\r\n", path, status);
     }
     return status;
 }
