@@ -1,6 +1,6 @@
 #include "sd_fat32_test.h"
 #include "sd_fat32.h"
-#include "src/FAT.h"
+#include "fat32/FAT32.h"
 #include "log.h"
 #include <string.h>
 

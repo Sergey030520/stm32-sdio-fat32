@@ -8,7 +8,7 @@
 #include "log.h"
 #include "memory_map.h"
 #include "board_pins.h"
-
+#include "pool_memory.h"
 #include "sd_fat32.h"
 #include "sd_fat32_test.h"
 #include "usart_board.h"

@@ -4,14 +4,17 @@ set(CMAKE_TOOLCHAIN_FILE ${CMAKE_SOURCE_DIR}/arm-none-eabi-gcc.cmake)
 
 project(stm32-sdio-fat32 C ASM)
 
+
+
 set(EXECUTABLE ${PROJECT_NAME}.elf)
 set(LINKER_FILE ${CMAKE_SOURCE_DIR}/conf_mem_stm32f4/STM32F407VETX_FLASH.ld)
 
 
 add_subdirectory(drivers)
 add_subdirectory(logger)
-add_subdirectory(filesystem)
+add_subdirectory(filesystems-ufat32)
 add_subdirectory(middleware)
+add_subdirectory(allocator)
 
 
 set(ARM_FLAGS
@@ -35,18 +38,20 @@ add_executable(${EXECUTABLE}
 
 
 
+target_compile_options(allocator PRIVATE ${ARM_FLAGS})
 target_compile_options(drivers_core PRIVATE ${ARM_FLAGS})
 target_compile_options(logger PRIVATE ${ARM_FLAGS})
 target_compile_options(driver_sd PRIVATE ${ARM_FLAGS})
-target_compile_options(fat32 PRIVATE ${ARM_FLAGS})
+target_compile_options(fat32_lib PRIVATE ${ARM_FLAGS})
 target_compile_options(${EXECUTABLE} PRIVATE ${ARM_FLAGS})
 target_compile_options(middleware PRIVATE ${ARM_FLAGS})
 
 target_link_libraries(${EXECUTABLE} PRIVATE
+        allocator
         drivers_core
         logger
         driver_sd
-        fat32
+        fat32_lib 
         middleware
         m
 )

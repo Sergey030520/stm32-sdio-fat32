@@ -4,13 +4,16 @@
 #include "log.h"
 #include "led.h"
 #include "timer.h"
-#include "src/pool_memory.h"
+#include "pool_memory.h"
+#include "fat32/fat32_alloc.h"
+#include "log_stm.h"
+
 
 
 #define DEFAULT_TIMEOUT 1000000
 #define BLOCK_SIZE 512
 
-
+Fat32Allocator fat32_allocator = {0};
 
 
 BlockDevice sd_device = {
@@ -49,6 +52,12 @@ int init_fat32(BlockDevice *device)
     {
         return -1;
     }
+
+    fat32_set_logger();
+
+    fat32_allocator.alloc = pool_alloc;
+    fat32_allocator.free = pool_free_region;
+    fat32_allocator_init(&fat32_allocator);    
 
     int status = mount_fat32(device);
     LOG_INFO("SD card is not formatted");
