@@ -172,9 +172,10 @@ void init_uart();
 При вставленной SD-карте проект успешно инициализируется, создаётся папка и файл на карте.  
 
 <p align="center">
-  <img src="images/board_sdcard.jpg" alt="STM32 Board with SD card" width="250"/>
-  <img src="images/uart_logs.png" alt="UART Logs with SD" width="250"/>
-  <img src="images/sd_files.png" alt="SD Filesystem after tests" width="250"/>
+  <img src="docs/images/board_with_sd.jpg" alt="STM32 Board with SD card" width="250"/>
+  <img src="docs/images/file_test.png" alt="File created on SD" width="250"/>
+  <img src="docs/images/folder_test.png" alt="Folder created on SD" width="250"/>
+  <img src="docs/images/root_dir.png" alt="Root directory structure" width="250"/>
 </p>  
 
 ---
@@ -183,9 +184,8 @@ void init_uart();
 При отсутствии SD-карты плата запускается, но не сигнализирует об успешной инициализации, а лог показывает ошибку.  
 
 <p align="center">
-  <img src="images/board_no_sd.jpg" alt="STM32 Board without SD card" width="300"/>
-  <img src="images/uart_no_sd.png" alt="UART Logs without SD" width="300"/>
-</p>  
+  <img src="docs/images/board_without_sd.jpg" alt="STM32 Board without SD card" width="300"/>
+</p>
 
 ## Пример вывода (Log Output) <a name="log_output"></a>
 
