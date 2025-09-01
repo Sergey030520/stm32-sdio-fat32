@@ -25,7 +25,10 @@
 5. [Загрузка на плату](#flash_to_board)
 6. [API работы с SD-картой и файлами](#interface_project)
 7. [Примеры работы](#example_work_project)
-
+8. [UART Middleware](#uart_middleware)
+9. [Фото работы](#project_photos)  
+10. [Пример вывода (Log Output)](#log_output)
+   
 ## Описание <a name="description_project"></a>
 
 Проект реализует драйвер SDIO и файловую систему FAT32 для **STM32F407VET6** с нуля, без сторонних библиотек.  
@@ -153,4 +156,71 @@ if (sd_fat32_exists("/MYDIR/TEST/test.txt")) {
 } else {
     LOG_INFO("File does not exist.");
 }
+```
+## UART Middleware <a name="uart_middleware"></a>
+
+В файлах `middleware/usart_board.c` и `middleware/usart_board.h` реализована функция:
+
+```c
+void init_uart();
+```
+Функция init_uart() конфигурирует USART1: настраивает TX/RX пины, включает DMA для передачи данных, задаёт базовые параметры UART. Если не изменять конфигурацию вручную, используется скорость передачи 115200 бод по умолчанию.
+
+## Фото работы <a name="project_photos"></a>
+
+### 1. Карта вставлена  
+При вставленной SD-карте проект успешно инициализируется, создаётся папка и файл на карте.  
+
+<p align="center">
+  <img src="images/board_sdcard.jpg" alt="STM32 Board with SD card" width="250"/>
+  <img src="images/uart_logs.png" alt="UART Logs with SD" width="250"/>
+  <img src="images/sd_files.png" alt="SD Filesystem after tests" width="250"/>
+</p>  
+
+---
+
+### 2. Карта не вставлена  
+При отсутствии SD-карты плата запускается, но не сигнализирует об успешной инициализации, а лог показывает ошибку.  
+
+<p align="center">
+  <img src="images/board_no_sd.jpg" alt="STM32 Board without SD card" width="300"/>
+  <img src="images/uart_no_sd.png" alt="UART Logs without SD" width="300"/>
+</p>  
+
+## Пример вывода (Log Output) <a name="log_output"></a>
+
+### 1. Карта вставлена и работает
+Пример инициализации драйверов, SD-карты и FAT32, а также создания директорий и записи в файл:  
+
+```
+[main.c:31] Драйверы запущены!
+[sd_fat32.c:95] RTC initialized and datetime callback set
+[SD.c:403] supported VHS (V2.X)![SD.c:459] SD card ready: type=SDSC, OCR=0x000001FE
+[SD.c:477] CID: MID 0, OID 289, product , ver 77, SN 1226842223
+[SD.c:490] Set new RCA: 22964; state: 2[SD.c:582] CSD version: 2, class command: b5, DSR: 0,[SD.c:600] WRITE_BL_LEN: 9, READ_BL_LEN: 9[SD.c:601] SD capacity: 9
+[SD.c:602] C_SIZE: 15359, [SD.c:603] COPY: 0, file format: 0
+[SD.c:606] capacity_gb: 3
+[SD.c:616] Card version: 4
+[SD.c:736] Card [rsa: 22964] select![SD.c:756] Set BUS width 4
+[sd_fat32.c:105] SD initialized!
+[sd_fat32.c:112] Fat32 initialized!
+[/home/sergey-athlete/code/Board/stm/projects/stm32-sdio-fat32/filesystems-ufat32/src/FAT32.c:1051] name new dir: TEST
+[sd_fat32_test.c:13] Directory created: /MYDIR/TEST
+[/home/sergey-athlete/code/Board/stm/projects/stm32-sdio-fat32/filesystems-ufat32/src/FAT32.c:1051] name new dir: TEST
+[sd_fat32_test.c:144] Directory created: /MYDIR/TEST
+[sd_fat32_test.c:159] File opened for append: /MYDIR/TEST/test.txt
+[/home/sergey-athlete/code/Board/stm/projects/stm32-sdio-fat32/filesystems-ufat32/src/FAT32.c:763] next_cluster: 5, adderess:32824, shift:166
+[sd_fat32_test.c:171] Data appended to /MYDIR/TEST/test.txt
+[sd_fat32_test.c:185] Read from /MYDIR/TEST/test.txt: 'Hello FAT32! Appending test data.Hello FAT32! Appending test data.Hello FAT32! Appending test data.Hello FAT32! Appending test'
+```
+### 2. Карта отсутствует
+Пример логов при старте без SD-карты:
+
+```
+[main.c:31] Драйверы запущены!
+[sd_fat32.c:95] RTC initialized and datetime callback set
+[SD.c:407] unsupported VHS, fallback to V1.X!
+[SD.c:432] ACMD41 send fail, status=-133
+[sd_fat32.c:102] Error launch Driver sd: -1
+[main.c:34] Error init sd+fat32!(error=-2)
 ```
